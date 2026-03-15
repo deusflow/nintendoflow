@@ -12,8 +12,13 @@ import (
 )
 
 // Free tier: 20 RPM, 200 req/day (no credit card).
-// DeepSeek intentionally excluded: servers in China, no opt-out from training.
-const openRouterModel = "meta-llama/llama-3.3-70b-instruct:free"
+// Fallback chain: DeepSeek V3 first (stronger model, better Ukrainian),
+// then Llama 3.3 70B if DeepSeek is unavailable.
+// Both excluded from training opt-out — pick your geopolitics 🙂
+var openRouterModels = []string{
+	"deepseek/deepseek-chat:free",            // DeepSeek V3 — безкоштовний
+	"meta-llama/llama-3.3-70b-instruct:free", // Llama 3.3 70B — резерв
+}
 
 // OpenRouterProvider calls OpenRouter as fallback AI.
 type OpenRouterProvider struct {
@@ -32,11 +37,16 @@ func NewOpenRouterProvider(apiKey string) *OpenRouterProvider {
 func (o *OpenRouterProvider) Name() string { return "openrouter-free" }
 
 func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	result, err := o.callModel(ctx, openRouterModel, prompt)
-	if err != nil {
-		return "", err
+	var lastErr error
+	for _, model := range openRouterModels {
+		result, err := o.callModel(ctx, model, prompt)
+		if err != nil {
+			lastErr = err
+			continue // try next model
+		}
+		return strings.TrimSpace(result), nil
 	}
-	return strings.TrimSpace(result), nil
+	return "", fmt.Errorf("all openrouter models failed: %w", lastErr)
 }
 
 func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {
