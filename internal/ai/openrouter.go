@@ -49,7 +49,7 @@ func (o *OpenRouterProvider) Rewrite(ctx context.Context, title, body, source st
 	if err != nil {
 		return "", err
 	}
-	return sanitizeOutput(result)
+	return sanitize(result)
 }
 
 func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {
@@ -80,12 +80,12 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 		return "", err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return "", fmt.Errorf("rate limited on model %s", model)
+		return "", fmt.Errorf("openrouter http 429 for model %s: %s", model, strings.TrimSpace(string(body)))
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("openrouter http %d for model %s: %s", resp.StatusCode, model, body)
 	}
 
@@ -96,7 +96,7 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&result); err != nil {
 		return "", err
 	}
 	if len(result.Choices) == 0 {

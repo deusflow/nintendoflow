@@ -23,6 +23,11 @@ import (
 	"github.com/deuswork/nintendoflow/internal/telegram"
 )
 
+const (
+	maxAICallsPerRun = 2
+	aiCallDelay      = 20 * time.Second
+)
+
 type candidate struct {
 	item      fetcher.Item
 	score     int
@@ -85,7 +90,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// -- 4. Init AI chain --------------------------------------------------
+	// -- 4. Init AI manager ------------------------------------------------
 	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		slog.Error("gemini init failed", "error", err)
@@ -100,7 +105,7 @@ func main() {
 		slog.Info("OpenRouter fallback disabled (no OPENROUTER_API_KEY)")
 	}
 
-	chain := ai.NewChain(cfg.SleepBetweenAICalls, providers...)
+	manager := ai.NewManager(providers, maxAICallsPerRun, aiCallDelay)
 	logStage("ai_provider_init", stageStart, runStart)
 	stageStart = time.Now()
 
@@ -166,7 +171,7 @@ func main() {
 
 	if len(candidates) < 1 {
 		slog.Info("no candidates this run")
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
@@ -185,14 +190,13 @@ func main() {
 
 	selectionPrompt := buildSelectorPrompt(topCandidates)
 
-	time.Sleep(20 * time.Second)
 	aiSelectorUsed = true
-	rawSelection, selectorProvider, err := chain.Complete(ctx, selectionPrompt)
+	rawSelection, err := manager.Generate(ctx, selectionPrompt)
 	selectedIdx := 0
 	if err != nil {
 		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 	} else {
-		slog.Info("AI selector used", "provider", selectorProvider)
+		slog.Info("AI selector used", "provider", manager.LastProvider())
 		idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
 		if !ok {
 			slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
@@ -221,19 +225,24 @@ func main() {
 	logStage("image_fetch", stageStart, runStart)
 	stageStart = time.Now()
 
-	time.Sleep(20 * time.Second)
+	rewritePrompt := ai.BuildPrompt(ai.NewsInput{
+		Title:  selected.item.Title,
+		Body:   selected.item.Description,
+		Source: selected.item.SourceName,
+	})
 	aiRewriteUsed = true
-	rewritten, rewriteProvider, err := chain.Rewrite(ctx, selected.item.Title, selected.item.Description, selected.item.SourceName)
+	rewritten, err := manager.Generate(ctx, rewritePrompt)
 	if errors.Is(err, ai.ErrSkipped) {
 		slog.Info("AI skipped selected candidate", "title", selected.item.Title)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 	if err != nil {
 		slog.Error("AI rewrite failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
+	rewriteProvider := manager.LastProvider()
 	slog.Info("AI rewrite used", "provider", rewriteProvider)
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()
@@ -255,7 +264,7 @@ func main() {
 	articleID, err := db.InsertArticle(database, article)
 	if err != nil {
 		slog.Error("insert selected article failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 	article.ID = articleID
@@ -266,20 +275,20 @@ func main() {
 
 	if cfg.DryRun {
 		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
 	if err != nil {
 		slog.Error("telegram bot init failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
 	if err := telegram.PostArticle(bot, cfg.TelegramChannelID, article); err != nil {
 		slog.Error("telegram post failed", "error", err, "article_id", article.ID)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
@@ -289,7 +298,7 @@ func main() {
 	posted = true
 	logStage("telegram_post", stageStart, runStart)
 
-	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
+	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
 }
 
 func buildSelectorPrompt(candidates []candidate) string {
@@ -336,12 +345,14 @@ func logStage(name string, stageStart, runStart time.Time) {
 	)
 }
 
-func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, runStart time.Time) {
+func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiCallsBudget int, runStart time.Time) {
 	slog.Info("run complete",
 		"fetched", fetched,
 		"filtered", filtered,
 		"ai_selector_used", aiSelectorUsed,
 		"ai_rewrite_used", aiRewriteUsed,
+		"ai_calls_used", aiCallsUsed,
+		"ai_calls_budget", aiCallsBudget,
 		"posted", posted,
 		"total_duration_ms", time.Since(runStart).Milliseconds(),
 	)

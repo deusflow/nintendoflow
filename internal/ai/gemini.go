@@ -46,5 +46,5 @@ func (g *GeminiProvider) Rewrite(ctx context.Context, title, body, source string
 	if err != nil {
 		return "", err
 	}
-	return sanitizeOutput(result)
+	return sanitize(result)
 }
