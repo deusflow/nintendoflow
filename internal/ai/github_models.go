@@ -41,7 +41,7 @@ func (g *GitHubModelsProvider) Complete(ctx context.Context, prompt string) (str
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"temperature": 0.3,
+		"temperature": 1,
 	}
 
 	jsonBody, err := json.Marshal(payload)
