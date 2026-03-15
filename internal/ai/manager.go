@@ -40,6 +40,12 @@ func NewManager(providers []AIProvider, maxCalls int, delay time.Duration) *Mana
 
 // Generate sends one prompt through providers sequentially with retry/fallback rules.
 func (m *Manager) Generate(ctx context.Context, prompt string) (string, error) {
+	if m.callsUsed >= m.maxCalls {
+		return "", ErrAICallBudgetExhausted
+	}
+	// One Generate invocation = one budget slot, regardless of provider retries/fallbacks.
+	m.callsUsed++
+
 	var lastErr error
 
 	for _, provider := range m.providers {
@@ -110,14 +116,10 @@ func (m *Manager) generateWithProvider(ctx context.Context, provider AIProvider,
 }
 
 func (m *Manager) callProvider(ctx context.Context, provider AIProvider, prompt string) (string, error) {
-	if m.callsUsed >= m.maxCalls {
-		return "", ErrAICallBudgetExhausted
-	}
 	if err := m.waitBetweenCalls(ctx); err != nil {
 		return "", err
 	}
 
-	m.callsUsed++
 	text, err := provider.Complete(ctx, prompt)
 	m.lastCallFinishedAt = time.Now()
 	if err != nil {
