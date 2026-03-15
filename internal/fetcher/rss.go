@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,6 +103,11 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
+	if isRedditHost(req.URL) {
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+		req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+		req.Header.Set("Cache-Control", "no-cache")
+	}
 
 	resp, err := feedHTTPClient.Do(req)
 	if err != nil {
@@ -170,4 +176,12 @@ func ResolveRedirect(rawURL string) (string, error) {
 func hashContent(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
+}
+
+func isRedditHost(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "reddit.com" || strings.HasSuffix(host, ".reddit.com")
 }
