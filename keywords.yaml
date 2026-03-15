@@ -40,7 +40,7 @@ topics:
 
   hardware:
     enabled: true
-    priority: 100
+    priority: 180
     keywords:
       - word: "switch 2"
         role: anchor
@@ -200,7 +200,7 @@ topics:
 
   insider:
     enabled: true
-    priority: 100
+    priority: 150
     keywords:
       - word: "rumor"
         role: signal
