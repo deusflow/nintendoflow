@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/deuswork/nintendoflow/internal/db"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -63,16 +64,33 @@ func buildCaption(article *db.Article, maxLen int) string {
 		prefix = ""
 	}
 
-	full := prefix + article.BodyUA
+	body := stripSourceFooter(article.BodyUA)
+	full := prefix + body
 	runes := []rune(full)
 	if len(runes) <= maxLen {
 		return full
 	}
 
-	bodyRunes := []rune(article.BodyUA)
+	bodyRunes := []rune(body)
 	allowed := maxLen - len([]rune(prefix)) - 3
 	if allowed > 0 && allowed < len(bodyRunes) {
 		return prefix + string(bodyRunes[:allowed]) + "..."
 	}
 	return string(runes[:maxLen])
+}
+
+// stripSourceFooter removes plain-text source/link lines because source is now
+// delivered via inline URL button under the post.
+func stripSourceFooter(body string) string {
+	lines := strings.Split(body, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(trimmed, "🔗") || strings.Contains(lower, "джерело:") || strings.Contains(lower, "source:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
