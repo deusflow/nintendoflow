@@ -37,7 +37,11 @@ func (g *GeminiProvider) Complete(ctx context.Context, prompt string) (string, e
 }
 
 func (g *GeminiProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	prompt := BuildPrompt(title, body, source)
+	prompt := BuildPrompt(NewsInput{
+		Title:  title,
+		Body:   body,
+		Source: source,
+	})
 	result, err := g.Complete(ctx, prompt)
 	if err != nil {
 		return "", err

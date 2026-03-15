@@ -40,7 +40,12 @@ func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (strin
 }
 
 func (o *OpenRouterProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	result, err := o.Complete(ctx, BuildPrompt(title, body, source))
+	prompt := BuildPrompt(NewsInput{
+		Title:  title,
+		Body:   body,
+		Source: source,
+	})
+	result, err := o.Complete(ctx, prompt)
 	if err != nil {
 		return "", err
 	}
