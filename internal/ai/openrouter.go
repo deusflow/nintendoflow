@@ -13,7 +13,7 @@ import (
 
 // Free tier: 20 RPM, 200 req/day (no credit card).
 // DeepSeek intentionally excluded: servers in China, no opt-out from training.
-const openRouterModel = "openrouter/auto"
+const openRouterModel = "meta-llama/llama-3.3-70b-instruct:free"
 
 // OpenRouterProvider calls OpenRouter as fallback AI.
 type OpenRouterProvider struct {
@@ -37,19 +37,6 @@ func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (strin
 		return "", err
 	}
 	return strings.TrimSpace(result), nil
-}
-
-func (o *OpenRouterProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	prompt := BuildPrompt(NewsInput{
-		Title:  title,
-		Body:   body,
-		Source: source,
-	})
-	result, err := o.Complete(ctx, prompt)
-	if err != nil {
-		return "", err
-	}
-	return sanitize(result)
 }
 
 func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {
@@ -79,7 +66,7 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusTooManyRequests {

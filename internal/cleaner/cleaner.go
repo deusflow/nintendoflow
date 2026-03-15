@@ -1,6 +1,7 @@
 package cleaner
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 
@@ -8,8 +9,8 @@ import (
 )
 
 // Run deletes articles older than 30 days.
-func Run(database *sql.DB) {
-	if err := db.Cleanup(database); err != nil {
+func Run(ctx context.Context, database *sql.DB) {
+	if err := db.Cleanup(ctx, database); err != nil {
 		slog.Warn("cleanup failed", "error", err)
 		return
 	}

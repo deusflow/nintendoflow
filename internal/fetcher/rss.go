@@ -19,6 +19,11 @@ import (
 // same hostname. Prevents rate-limiting on feeds like Google News.
 const interDomainDelay = 2 * time.Second
 
+var (
+	feedHTTPClient     = &http.Client{Timeout: 30 * time.Second}
+	redirectHTTPClient = &http.Client{Timeout: 10 * time.Second}
+)
+
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
 	Title         string
@@ -91,7 +96,6 @@ func extractDomain(rawURL string) string {
 }
 
 func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", f.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
@@ -99,7 +103,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; NintendoNewsBot/1.0)")
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
 
-	resp, err := client.Do(req)
+	resp, err := feedHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
@@ -155,8 +159,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 
 // ResolveRedirect follows a redirect and returns the final URL.
 func ResolveRedirect(rawURL string) (string, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Head(rawURL)
+	resp, err := redirectHTTPClient.Head(rawURL)
 	if err != nil {
 		return rawURL, nil
 	}

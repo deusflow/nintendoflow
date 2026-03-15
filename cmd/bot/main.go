@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -74,6 +75,8 @@ func main() {
 	logStage("config", stageStart, runStart)
 	stageStart = time.Now()
 
+	ctx := context.Background()
+
 	// -- 2. DB connect (retry 3x) -----------------------------------------
 	database, err := db.Connect(cfg.DatabaseURL)
 	if err != nil {
@@ -82,20 +85,22 @@ func main() {
 	}
 	defer func() { _ = database.Close() }()
 
-	if err := db.RunMigration(database); err != nil {
-		slog.Error("migration failed", "error", err)
-		os.Exit(1)
-	}
+	if cfg.DryRun {
+		slog.Info("DRY_RUN - skipping database writes", "skip_migration", true, "skip_cleanup", true)
+	} else {
+		if err := db.RunMigration(ctx, database); err != nil {
+			slog.Error("migration failed", "error", err)
+			os.Exit(1)
+		}
 
-	// -- 3. DB cleanup -----------------------------------------------------
-	cleaner.Run(database)
+		// -- 3. DB cleanup -----------------------------------------------------
+		cleaner.Run(ctx, database)
+	}
 	logStage("db", stageStart, runStart)
 	stageStart = time.Now()
 
-	ctx := context.Background()
-
 	// -- 4. Init AI manager ------------------------------------------------
-	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
+	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey, cfg.GeminiModel)
 	if err != nil {
 		slog.Error("gemini init failed", "error", err)
 		os.Exit(1)
@@ -124,15 +129,15 @@ func main() {
 	stageStart = time.Now()
 
 	// -- 6. Local filtering only (freshness + DB dedup hashes + score) ----
-	cutoff := time.Now().Add(-48 * time.Hour)
+	cutoff := time.Now().Add(-time.Duration(cfg.RecentTitlesHours) * time.Hour)
 	candidates := make([]candidate, 0, len(items))
 
-	knownURLs, err := db.FetchRecentURLHashes(ctx, database, 48)
+	knownURLs, err := db.FetchRecentURLHashes(ctx, database, cfg.RecentTitlesHours)
 	if err != nil {
 		slog.Warn("fetch recent url hashes failed", "error", err)
 		knownURLs = make(map[string]struct{})
 	}
-	knownTitles, err := db.FetchRecentTitleHashes(ctx, database, 48)
+	knownTitles, err := db.FetchRecentTitleHashes(ctx, database, cfg.RecentTitlesHours)
 	if err != nil {
 		slog.Warn("fetch recent title hashes failed", "error", err)
 		knownTitles = make(map[string]struct{})
@@ -265,7 +270,13 @@ func main() {
 		PublishedAt: selected.item.PublishedAt,
 	}
 
-	articleID, err := db.InsertArticle(database, article)
+	if cfg.DryRun {
+		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		return
+	}
+
+	articleID, err := db.InsertArticle(ctx, database, article)
 	if err != nil {
 		slog.Error("insert selected article failed", "error", err)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
@@ -273,14 +284,8 @@ func main() {
 	}
 	article.ID = articleID
 
-	if err := db.UpdateBodyUA(database, article.ID, rewritten, rewriteProvider); err != nil {
+	if err := db.UpdateBodyUA(ctx, database, article.ID, rewritten, rewriteProvider); err != nil {
 		slog.Warn("update body_ua failed", "error", err)
-	}
-
-	if cfg.DryRun {
-		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
-		return
 	}
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
@@ -296,7 +301,7 @@ func main() {
 		return
 	}
 
-	if err := db.MarkPosted(database, article.ID); err != nil {
+	if err := db.MarkPosted(ctx, database, article.ID); err != nil {
 		slog.Warn("mark posted failed", "error", err)
 	}
 	posted = true
@@ -307,7 +312,7 @@ func main() {
 
 func buildSelectorPrompt(candidates []candidate) string {
 	var b strings.Builder
-	b.WriteString("Here are 5 news headlines. Return only the number of the single most interesting one for a Nintendo-focused Ukrainian Telegram channel. Return just the number, nothing else.\n\n")
+	b.WriteString(fmt.Sprintf("Here are %d news headlines. Return only the number of the single most interesting one for a Nintendo-focused Ukrainian Telegram channel. Return just the number, nothing else.\n\n", len(candidates)))
 	for i, c := range candidates {
 		desc := strings.ReplaceAll(c.item.Description, "\n", " ")
 		desc = strings.TrimSpace(desc)

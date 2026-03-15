@@ -18,15 +18,15 @@ type GeminiProvider struct {
 }
 
 // NewGeminiProvider initialises a Gemini client.
-func NewGeminiProvider(ctx context.Context, apiKey string) (*GeminiProvider, error) {
+func NewGeminiProvider(ctx context.Context, apiKey, model string) (*GeminiProvider, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
 		return nil, fmt.Errorf("gemini init: %w", err)
 	}
-	return &GeminiProvider{client: client, model: "gemini-2.5-flash"}, nil
+	return &GeminiProvider{client: client, model: model}, nil
 }
 
-func (g *GeminiProvider) Name() string { return "gemini-2.5-flash" }
+func (g *GeminiProvider) Name() string { return g.model }
 
 func (g *GeminiProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	result, err := g.client.Models.GenerateContent(ctx, g.model, genai.Text(prompt), nil)
@@ -34,17 +34,4 @@ func (g *GeminiProvider) Complete(ctx context.Context, prompt string) (string, e
 		return "", fmt.Errorf("gemini generate: %w", err)
 	}
 	return strings.TrimSpace(result.Text()), nil
-}
-
-func (g *GeminiProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	prompt := BuildPrompt(NewsInput{
-		Title:  title,
-		Body:   body,
-		Source: source,
-	})
-	result, err := g.Complete(ctx, prompt)
-	if err != nil {
-		return "", err
-	}
-	return sanitize(result)
 }

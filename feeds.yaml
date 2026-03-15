@@ -1,110 +1,35 @@
-# RSS sources loaded by the bot at runtime.
-# Edit this file and push to main: changes apply on next cron run.
-
-- url: "https://news.google.com/rss/search?q=site:nintendo.com+announcement&hl=en-US&gl=US&ceid=US:en"
-  name: "Nintendo Official Blog"
+- url: "https://insider-gaming.com/feed/"
+  name: "Insider Gaming"
   lang: en
-  priority: 100      # official first-party announcements
-  active: true       # set false to disable without deleting
-  type: official     # official / media / insider / aggregator
-  require_anchor: false  # official Nintendo source is already trusted as Nintendo-only
-  needs_redirect_resolve: true  # Google News redirects must be resolved
-
-- url: "https://www.nintendolife.com/feeds/latest"
-  name: "Nintendo Life"
-  lang: en
-  priority: 85       # high-quality Nintendo-focused media
-  active: true
-  type: media
-  require_anchor: false  # dedicated Nintendo outlet; titles may omit obvious Nintendo words
-  needs_redirect_resolve: false
-
-- url: "https://mynintendonews.com/feed/"
-  name: "My Nintendo News"
-  lang: en
-  priority: 75       # broad Nintendo coverage
-  active: true
-  type: media
-  require_anchor: false  # dedicated Nintendo outlet; trust source context
-  needs_redirect_resolve: false
-
-- url: "https://gonintendo.com/rss"
-  name: "GoNintendo"
-  lang: en
-  priority: 75       # frequent updates, medium signal/noise
-  active: false
-  type: media
-  require_anchor: false  # dedicated Nintendo outlet; source context is usually enough
-  needs_redirect_resolve: false
-
-- url: "https://nintendoeverything.com/feed/"
-  name: "Nintendo Everything"
-  lang: en
-  priority: 75       # wide Nintendo beat, useful for fast pickups
-  active: true
-  type: media
-  require_anchor: false  # dedicated Nintendo outlet; allow context-driven headlines
-  needs_redirect_resolve: false
-
-- url: "https://www.eurogamer.net/feed"
-  name: "Eurogamer"
-  lang: en
-  priority: 65       # broader games media, Nintendo subset
-  active: true
-  type: media
-  require_anchor: true   # broad outlet; demand explicit Nintendo context in title/body
-  needs_redirect_resolve: false
-
-- url: "https://www.videogameschronicle.com/feed/"
-  name: "Video Games Chronicle"
-  lang: en
-  priority: 90       # strong insider/reporting signal
+  priority: 95       # Топовые инсайды от Тома Хендерсона
   active: true
   type: insider
-  require_anchor: true   # broader reporting outlet; filter non-Nintendo stories
+  require_anchor: true   # Мультиплатформа; нужен якорь Nintendo
   needs_redirect_resolve: false
 
-- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+insider+leak&hl=en-US&gl=US&ceid=US:en"
-  name: "Google News - Nintendo insider"
+- url: "https://wccftech.com/feed/"
+  name: "Wccftech"
   lang: en
-  priority: 55       # aggregator, good for discovery but noisier
-  active: true
-  type: aggregator
-  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
-  needs_redirect_resolve: true   # Google News redirects must be resolved
-
-- url: "https://news.google.com/rss/search?q=Nintendo+Direct+announce+2026&hl=en-US&gl=US&ceid=US:en"
-  name: "Google News - Nintendo Direct"
-  lang: en
-  priority: 60       # event discovery feed
-  active: true
-  type: aggregator
-  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
-  needs_redirect_resolve: true
-
-- url: "https://news.google.com/rss/search?q=Nintendo+hardware+new+console&hl=en-US&gl=US&ceid=US:en"
-  name: "Google News - Nintendo hardware"
-  lang: en
-  priority: 55       # hardware rumor tracking feed
-  active: true
-  type: aggregator
-  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
-  needs_redirect_resolve: true
-
-- url: "https://www.gematsu.com/feed"
-  name: "Gematsu"
-  lang: en
-  priority: 80
+  priority: 85       # Разбор процессоров, графики и технических лимитов
   active: true
   type: media
-  require_anchor: true
+  require_anchor: true   # Пишут про всё железо; нужен якорь Nintendo
   needs_redirect_resolve: false
 
-- url: "https://feeds.ign.com/ign/nintendo-articles"
-  name: "IGN Nintendo"
+- url: "https://www.reddit.com/r/GamingLeaksAndRumours/search.rss?q=Nintendo&restrict_sr=on&sort=new"
+  name: "Reddit - Gaming Leaks"
   lang: en
-  priority: 85
-  active: false
-  type: media
-  require_anchor: false
+  priority: 70       # Самые первые сливы из Twitter и закрытых форумов
+  active: true
+  type: aggregator
+  require_anchor: false  # Поиск уже отфильтрован по слову Nintendo
   needs_redirect_resolve: false
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+Digital+Foundry+specs+performance&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Tech & Specs"
+  lang: en
+  priority: 65       # Поиск технических разборов (FPS, разрешение, тесты)
+  active: true
+  type: aggregator
+  require_anchor: true   # Google может шуметь; якорь обязателен
+  needs_redirect_resolve: true
