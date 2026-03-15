@@ -8,6 +8,7 @@
 #   anchor     = explicit Nintendo context marker
 #   comparison = hardware/graphics/performance comparison marker
 #   signal     = general news value marker
+#   tech       = developer/hardware capability reveal marker
 #   reject     = low-value content penalty
 
 topics:
@@ -53,6 +54,52 @@ topics:
       - word: "joy con"
         role: anchor
         weight: 18
+      # Технічний потенціал і розкриття можливостей
+      - word: "developer insight"
+        role: tech
+        weight: 75
+      - word: "dev reveals"
+        role: tech
+        weight: 80
+      - word: "optimization breakthrough"
+        role: tech
+        weight: 85
+      - word: "portable mode"
+        role: tech
+        weight: 70
+      - word: "handheld performance"
+        role: tech
+        weight: 75
+      - word: "undocked"
+        role: tech
+        weight: 70
+      - word: "pushing limits"
+        role: tech
+        weight: 80
+      - word: "technical potential"
+        role: tech
+        weight: 80
+      - word: "hidden capabilities"
+        role: tech
+        weight: 85
+      - word: "developers unlocking"
+        role: tech
+        weight: 85
+      - word: "squeeze more"
+        role: tech
+        weight: 75
+      - word: "more power"
+        role: tech
+        weight: 65
+      - word: "graphics upgrade"
+        role: tech
+        weight: 70
+      - word: "better than expected"
+        role: tech
+        weight: 75
+      - word: "surprised by hardware"
+        role: tech
+        weight: 80
 
   franchises:
     enabled: true
