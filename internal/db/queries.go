@@ -8,6 +8,8 @@ import (
 type Article struct {
 	ID          int
 	SourceURL   string
+	URLHash     string
+	TitleHash   string
 	ContentHash string
 	TitleRaw    string
 	TitleUA     string
@@ -22,20 +24,23 @@ type Article struct {
 	CreatedAt   time.Time
 }
 
-// InsertArticle inserts a new article; returns false if URL already exists.
-func InsertArticle(db *sql.DB, a Article) (bool, error) {
-	_, err := db.Exec(`
+// InsertArticle inserts a new article and returns its id.
+func InsertArticle(db *sql.DB, a Article) (int, error) {
+	var id int
+	err := db.QueryRow(`
 		INSERT INTO articles
-			(source_url, content_hash, title_raw, image_url, source_name, source_type, score, published_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		ON CONFLICT (source_url) DO NOTHING`,
-		a.SourceURL, a.ContentHash, a.TitleRaw, nullStr(a.ImageURL),
+			(source_url, url_hash, title_hash, content_hash, title_raw, image_url, source_name, source_type, score, published_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (source_url) DO UPDATE
+		SET score=GREATEST(articles.score, EXCLUDED.score)
+		RETURNING id`,
+		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw, nullStr(a.ImageURL),
 		a.SourceName, a.SourceType, a.Score, a.PublishedAt,
-	)
+	).Scan(&id)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return true, nil
+	return id, nil
 }
 
 // RecentTitles returns titles created in the last N hours (for dedup).
@@ -63,6 +68,16 @@ func RecentTitles(db *sql.DB, hours int) ([]string, error) {
 func URLExists(db *sql.DB, sourceURL string) (bool, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(1) FROM articles WHERE source_url=$1`, sourceURL).Scan(&count)
+	return count > 0, err
+}
+
+// HashExists checks dedup by url_hash OR title_hash.
+func HashExists(db *sql.DB, urlHash, titleHash string) (bool, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(1)
+		FROM articles
+		WHERE url_hash = $1 OR title_hash = $2`, urlHash, titleHash).Scan(&count)
 	return count > 0, err
 }
 
@@ -120,6 +135,8 @@ func RunMigration(db *sql.DB) error {
 CREATE TABLE IF NOT EXISTS articles (
     id           SERIAL PRIMARY KEY,
     source_url   TEXT UNIQUE NOT NULL,
+	url_hash     TEXT,
+	title_hash   TEXT,
     content_hash TEXT NOT NULL,
     title_raw    TEXT NOT NULL,
     title_ua     TEXT,
@@ -133,10 +150,14 @@ CREATE TABLE IF NOT EXISTS articles (
     published_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS url_hash TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS title_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_articles_posted_tg    ON articles(posted_tg);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at   ON articles(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
 CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_url_hash_unique ON articles(url_hash) WHERE url_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_articles_title_hash ON articles(title_hash);
 `)
 	return err
 }

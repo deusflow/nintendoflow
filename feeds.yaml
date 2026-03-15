@@ -1,14 +1,14 @@
 # RSS sources loaded by the bot at runtime.
 # Edit this file and push to main: changes apply on next cron run.
 
-- url: "https://www.nintendo.com/en-GB/news/"
+- url: "https://news.google.com/rss/search?q=site:nintendo.com+announcement&hl=en-US&gl=US&ceid=US:en"
   name: "Nintendo Official Blog"
   lang: en
   priority: 100      # official first-party announcements
   active: true       # set false to disable without deleting
   type: official     # official / media / insider / aggregator
   require_anchor: false  # official Nintendo source is already trusted as Nintendo-only
-  needs_redirect_resolve: false  # direct feed URL
+  needs_redirect_resolve: true  # Google News redirects must be resolved
 
 - url: "https://www.nintendolife.com/feeds/latest"
   name: "Nintendo Life"
@@ -28,7 +28,7 @@
   require_anchor: false  # dedicated Nintendo outlet; trust source context
   needs_redirect_resolve: false
 
-- url: "https://gonintendo.com/feed"
+- url: "https://gonintendo.com/rss"
   name: "GoNintendo"
   lang: en
   priority: 75       # frequent updates, medium signal/noise
@@ -46,7 +46,7 @@
   require_anchor: false  # dedicated Nintendo outlet; allow context-driven headlines
   needs_redirect_resolve: false
 
-- url: "https://www.eurogamer.net/?format=rss"
+- url: "https://www.eurogamer.net/feed"
   name: "Eurogamer"
   lang: en
   priority: 65       # broader games media, Nintendo subset
@@ -91,3 +91,20 @@
   require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
   needs_redirect_resolve: true
 
+- url: "https://www.gematsu.com/feed"
+  name: "Gematsu"
+  lang: en
+  priority: 80
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://feeds.ign.com/ign/nintendo-articles"
+  name: "IGN Nintendo"
+  lang: en
+  priority: 85
+  active: true
+  type: media
+  require_anchor: false
+  needs_redirect_resolve: false

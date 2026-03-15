@@ -14,5 +14,6 @@ var ErrAllProvidersFailed = errors.New("all AI providers failed")
 // AIProvider is the interface implemented by all AI backends.
 type AIProvider interface {
 	Name() string
+	Complete(ctx context.Context, prompt string) (string, error)
 	Rewrite(ctx context.Context, title, body, source string) (string, error)
 }

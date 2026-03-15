@@ -7,16 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 // Free tier: 20 RPM, 200 req/day (no credit card).
 // DeepSeek intentionally excluded: servers in China, no opt-out from training.
-var openRouterFreeModels = []string{
-	"openrouter/auto",                        // auto-router: best available free model
-	"google/gemini-2.0-flash-exp:free",       // explicit fallback
-	"meta-llama/llama-3.3-70b-instruct:free", // reserve
-}
+const openRouterModel = "openrouter/auto"
 
 // OpenRouterProvider calls OpenRouter as fallback AI.
 type OpenRouterProvider struct {
@@ -34,24 +31,27 @@ func NewOpenRouterProvider(apiKey string) *OpenRouterProvider {
 
 func (o *OpenRouterProvider) Name() string { return "openrouter-free" }
 
-func (o *OpenRouterProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	var lastErr error
-	for _, model := range openRouterFreeModels {
-		result, err := o.callModel(ctx, model, title, body, source)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return sanitizeOutput(result)
+func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (string, error) {
+	result, err := o.callModel(ctx, openRouterModel, prompt)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("all openrouter models failed: %w", lastErr)
+	return strings.TrimSpace(result), nil
 }
 
-func (o *OpenRouterProvider) callModel(ctx context.Context, model, title, bodyText, source string) (string, error) {
+func (o *OpenRouterProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
+	result, err := o.Complete(ctx, BuildPrompt(title, body, source))
+	if err != nil {
+		return "", err
+	}
+	return sanitizeOutput(result)
+}
+
+func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "user", "content": BuildPrompt(title, bodyText, source)},
+			{"role": "user", "content": prompt},
 		},
 		"max_tokens": 500,
 	}

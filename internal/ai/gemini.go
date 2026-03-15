@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/genai"
 )
@@ -27,11 +28,19 @@ func NewGeminiProvider(ctx context.Context, apiKey string) (*GeminiProvider, err
 
 func (g *GeminiProvider) Name() string { return "gemini-2.5-flash" }
 
-func (g *GeminiProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
-	prompt := BuildPrompt(title, body, source)
+func (g *GeminiProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	result, err := g.client.Models.GenerateContent(ctx, g.model, genai.Text(prompt), nil)
 	if err != nil {
 		return "", fmt.Errorf("gemini generate: %w", err)
 	}
-	return sanitizeOutput(result.Text())
+	return strings.TrimSpace(result.Text()), nil
+}
+
+func (g *GeminiProvider) Rewrite(ctx context.Context, title, body, source string) (string, error) {
+	prompt := BuildPrompt(title, body, source)
+	result, err := g.Complete(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return sanitizeOutput(result)
 }

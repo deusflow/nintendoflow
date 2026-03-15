@@ -12,6 +12,13 @@ func HashURL(url string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// HashTitle returns a normalized sha256 hash for title dedup in DB.
+func HashTitle(title string) string {
+	normalized := strings.Join(strings.Fields(strings.ToLower(title)), " ")
+	h := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(h[:])
+}
+
 // IsDuplicate returns true if title is too similar (Jaccard > 0.65)
 // to any title in the recent list (Layer 2 dedup).
 func IsDuplicate(title string, recent []string) bool {
