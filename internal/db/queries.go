@@ -38,11 +38,11 @@ func InsertArticle(db *sql.DB, a Article) (bool, error) {
 	return true, nil
 }
 
-// RecentTitles returns titles created in the last 24 hours (for dedup).
-func RecentTitles(db *sql.DB) ([]string, error) {
+// RecentTitles returns titles created in the last N hours (for dedup).
+func RecentTitles(db *sql.DB, hours int) ([]string, error) {
 	rows, err := db.Query(`
 		SELECT title_raw FROM articles
-		WHERE created_at > NOW() - INTERVAL '24 hours'`)
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')`, hours)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func URLExists(db *sql.DB, sourceURL string) (bool, error) {
 // TopUnposted returns the top N unposted articles ordered by score DESC.
 func TopUnposted(db *sql.DB, limit int) ([]Article, error) {
 	rows, err := db.Query(`
-		SELECT id, source_url, title_raw, image_url, source_name, score
+		SELECT id, source_url, title_raw, image_url, source_name, source_type, score
 		FROM articles
 		WHERE posted_tg = FALSE
 		ORDER BY score DESC
@@ -83,7 +83,7 @@ func TopUnposted(db *sql.DB, limit int) ([]Article, error) {
 	for rows.Next() {
 		var a Article
 		var imgURL sql.NullString
-		if err := rows.Scan(&a.ID, &a.SourceURL, &a.TitleRaw, &imgURL, &a.SourceName, &a.Score); err != nil {
+		if err := rows.Scan(&a.ID, &a.SourceURL, &a.TitleRaw, &imgURL, &a.SourceName, &a.SourceType, &a.Score); err != nil {
 			return nil, err
 		}
 		if imgURL.Valid {

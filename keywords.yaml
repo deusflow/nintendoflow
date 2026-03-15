@@ -1,0 +1,135 @@
+# Keyword scoring rules loaded at runtime.
+# Edit weight and push to main: changes apply on next cron run.
+
+- word: "nintendo direct"
+  category: event
+  weight: 100   # flagship Nintendo event; should almost always pass threshold
+
+- word: "direct mini"
+  category: event
+  weight: 90    # smaller but still major event signal
+
+- word: "partner direct"
+  category: event
+  weight: 90    # partner showcase is highly relevant
+
+- word: "switch 2"
+  category: hardware
+  weight: 95    # core audience topic
+
+- word: "nintendo switch 2"
+  category: hardware
+  weight: 95    # explicit hardware generation mention
+
+- word: "announced"
+  category: release
+  weight: 60    # hard news indicator
+
+- word: "reveal"
+  category: release
+  weight: 60    # announcement language is strong signal
+
+- word: "new game"
+  category: release
+  weight: 50    # generic release signal, moderate confidence
+
+- word: "launch"
+  category: release
+  weight: 50    # shipping timing/newsworthy milestone
+
+- word: "release date"
+  category: release
+  weight: 55    # concrete timing is high utility for readers
+
+- word: "free-to-play"
+  category: monetization
+  weight: 45    # notable player-impact update
+
+- word: "f2p"
+  category: monetization
+  weight: 45    # shorthand variant of free-to-play
+
+- word: "free to play"
+  category: monetization
+  weight: 45    # phrase variant coverage
+
+- word: "free game"
+  category: monetization
+  weight: 40    # promotions and giveaways can be useful
+
+- word: "update"
+  category: patch
+  weight: 30    # routine but still relevant
+
+- word: "patch"
+  category: patch
+  weight: 30    # routine maintenance signal
+
+- word: "dlc"
+  category: patch
+  weight: 35    # content expansion matters to players
+
+- word: "expansion"
+  category: patch
+  weight: 35    # long-tail content relevance
+
+- word: "rumor"
+  category: insider
+  weight: 20    # useful but less reliable
+
+- word: "leak"
+  category: insider
+  weight: 20    # same as rumor; keep lower confidence
+
+- word: "insider"
+  category: insider
+  weight: 20    # report context, not official
+
+- word: "report"
+  category: insider
+  weight: 20    # report language is softer signal
+
+- word: "sale"
+  category: commerce
+  weight: 10    # low urgency utility signal
+
+- word: "discount"
+  category: commerce
+  weight: 10    # low urgency utility signal
+
+- word: "eshop sale"
+  category: commerce
+  weight: 12    # slightly more relevant for Nintendo audience
+
+- word: "top 10"
+  category: spam
+  weight: -50   # listicle penalty
+
+- word: "best games of"
+  category: spam
+  weight: -50   # evergreen roundup penalty
+
+- word: "tier list"
+  category: spam
+  weight: -50   # low-news-value content
+
+- word: "our review"
+  category: spam
+  weight: -35   # review content is less suitable for this bot
+
+- word: "we reviewed"
+  category: spam
+  weight: -35   # review phrasing variant
+
+- word: "guide"
+  category: spam
+  weight: -40   # guide/tutorial penalty
+
+- word: "how to"
+  category: spam
+  weight: -40   # tutorial phrasing variant
+
+- word: "tips and tricks"
+  category: spam
+  weight: -40   # evergreen helper content penalty
+

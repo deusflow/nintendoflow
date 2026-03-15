@@ -8,6 +8,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mmcdole/gofeed v1.3.0
 	google.golang.org/genai v1.0.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -1,0 +1,83 @@
+# RSS sources loaded by the bot at runtime.
+# Edit this file and push to main: changes apply on next cron run.
+
+- url: "https://www.nintendo.com/en-GB/news/"
+  name: "Nintendo Official Blog"
+  lang: en
+  priority: 100      # official first-party announcements
+  active: true       # set false to disable without deleting
+  type: official     # official / media / insider / aggregator
+  needs_redirect_resolve: false  # direct feed URL
+
+- url: "https://www.nintendolife.com/feeds/latest"
+  name: "Nintendo Life"
+  lang: en
+  priority: 85       # high-quality Nintendo-focused media
+  active: true
+  type: media
+  needs_redirect_resolve: false
+
+- url: "https://mynintendonews.com/feed/"
+  name: "My Nintendo News"
+  lang: en
+  priority: 75       # broad Nintendo coverage
+  active: true
+  type: media
+  needs_redirect_resolve: false
+
+- url: "https://gonintendo.com/feed"
+  name: "GoNintendo"
+  lang: en
+  priority: 75       # frequent updates, medium signal/noise
+  active: true
+  type: media
+  needs_redirect_resolve: false
+
+- url: "https://nintendoeverything.com/feed/"
+  name: "Nintendo Everything"
+  lang: en
+  priority: 75       # wide Nintendo beat, useful for fast pickups
+  active: true
+  type: media
+  needs_redirect_resolve: false
+
+- url: "https://www.eurogamer.net/?format=rss"
+  name: "Eurogamer"
+  lang: en
+  priority: 65       # broader games media, Nintendo subset
+  active: true
+  type: media
+  needs_redirect_resolve: false
+
+- url: "https://www.videogameschronicle.com/feed/"
+  name: "Video Games Chronicle"
+  lang: en
+  priority: 90       # strong insider/reporting signal
+  active: true
+  type: insider
+  needs_redirect_resolve: false
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+insider+leak&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo insider"
+  lang: en
+  priority: 55       # aggregator, good for discovery but noisier
+  active: true
+  type: aggregator
+  needs_redirect_resolve: true   # Google News redirects must be resolved
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Direct+announce+2026&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo Direct"
+  lang: en
+  priority: 60       # event discovery feed
+  active: true
+  type: aggregator
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=Nintendo+hardware+new+console&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo hardware"
+  lang: en
+  priority: 55       # hardware rumor tracking feed
+  active: true
+  type: aggregator
+  needs_redirect_resolve: true
+

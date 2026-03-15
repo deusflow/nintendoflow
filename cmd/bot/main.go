@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -23,14 +24,26 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// ── 1. Config ─────────────────────────────────────────────────────────
+	// -- 1. Config ---------------------------------------------------------
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load failed", "error", err)
 		os.Exit(1)
 	}
 
-	// ── 2. DB connect (retry 3×) ──────────────────────────────────────────
+	feeds, err := config.LoadFeeds(cfg.FeedsPath)
+	if err != nil {
+		slog.Error("feeds load failed", "path", cfg.FeedsPath, "error", err)
+		os.Exit(1)
+	}
+	keywords, err := config.LoadKeywords(cfg.KeywordsPath)
+	if err != nil {
+		slog.Error("keywords load failed", "path", cfg.KeywordsPath, "error", err)
+		os.Exit(1)
+	}
+	config.LogConfigLoaded(len(feeds), len(keywords))
+
+	// -- 2. DB connect (retry 3x) -----------------------------------------
 	database, err := db.Connect(cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("db connect failed", "error", err)
@@ -43,12 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── 3. DB cleanup ─────────────────────────────────────────────────────
+	// -- 3. DB cleanup -----------------------------------------------------
 	cleaner.Run(database)
 
 	ctx := context.Background()
 
-	// ── 4. Init AI chain ──────────────────────────────────────────────────
+	// -- 4. Init AI chain --------------------------------------------------
 	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		slog.Error("gemini init failed", "error", err)
@@ -67,15 +80,15 @@ func main() {
 
 	chain := ai.NewChain(cfg.SleepBetweenAICalls, providers...)
 
-	// ── 5. Fetch RSS (parallel, 30s timeout) ─────────────────────────────
+	// -- 5. Fetch RSS (parallel, 30s timeout) ------------------------------
 	fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	items := fetcher.FetchAll(fetchCtx)
+	items := fetcher.FetchAll(fetchCtx, feeds)
 	slog.Info("fetched articles", "count", len(items))
 
-	// ── 6. Dedup + score + insert ─────────────────────────────────────────
-	recentTitles, err := db.RecentTitles(database)
+	// -- 6. Dedup + score + insert ----------------------------------------
+	recentTitles, err := db.RecentTitles(database, cfg.RecentTitlesHours)
 	if err != nil {
 		slog.Warn("could not load recent titles", "error", err)
 	}
@@ -105,7 +118,7 @@ func main() {
 		}
 
 		// Score
-		s := scorer.ScoreArticle(item.Title, item.Description, item.SourceType)
+		s := scorer.Score(item.Title, item.Description, keywords)
 		if s < cfg.MinScore {
 			scoredOutCount++
 			continue
@@ -128,7 +141,7 @@ func main() {
 		recentTitles = append(recentTitles, item.Title)
 	}
 
-	// ── 7. Top unposted articles ──────────────────────────────────────────
+	// -- 7. Top unposted articles -----------------------------------------
 	unposted, err := db.TopUnposted(database, cfg.MaxPostsPerRun)
 	if err != nil {
 		slog.Error("top unposted query failed", "error", err)
@@ -136,12 +149,13 @@ func main() {
 	}
 
 	if len(unposted) == 0 {
-		slog.Info("no new articles to post — silence is golden")
+		slog.Info("no new articles to post - silence is golden")
 		logStats(fetchedCount, dedupedCount, scoredOutCount, 0, 0, 0)
+		printChannelDescriptionHint()
 		return
 	}
 
-	// ── 8. AI rewrite + post ──────────────────────────────────────────────
+	// -- 8. AI rewrite + post ---------------------------------------------
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
 	if err != nil {
 		slog.Error("telegram bot init failed", "error", err)
@@ -176,9 +190,10 @@ func main() {
 		if err := db.UpdateBodyUA(database, article.ID, text, usedProvider); err != nil {
 			slog.Warn("update body_ua failed", "error", err)
 		}
+		article.BodyUA = text
 
 		if cfg.DryRun {
-			slog.Info("DRY_RUN — would post", "provider", usedProvider, "text", text)
+			slog.Info("DRY_RUN - would post", "provider", usedProvider, "text", text)
 			if usedProvider == "gemini-2.5-flash" {
 				geminiCount++
 			} else {
@@ -188,10 +203,7 @@ func main() {
 			continue
 		}
 
-		if err := telegram.PostArticle(bot, cfg.TelegramChannelID, telegram.Article{
-			BodyUA:   text,
-			ImageURL: article.ImageURL,
-		}); err != nil {
+		if err := telegram.PostArticle(bot, cfg.TelegramChannelID, article); err != nil {
 			slog.Error("telegram post failed", "error", err, "article_id", article.ID)
 			continue
 		}
@@ -210,8 +222,9 @@ func main() {
 		time.Sleep(3 * time.Second)
 	}
 
-	// ── 9. Summary log ────────────────────────────────────────────────────
+	// -- 9. Summary log ----------------------------------------------------
 	logStats(fetchedCount, dedupedCount, scoredOutCount, postedCount, geminiCount, openRouterCount)
+	printChannelDescriptionHint()
 }
 
 func logStats(fetched, deduped, scoredOut, posted, gemini, openRouter int) {
@@ -223,4 +236,20 @@ func logStats(fetched, deduped, scoredOut, posted, gemini, openRouter int) {
 		"gemini_used", gemini,
 		"openrouter_used", openRouter,
 	)
+}
+
+func printChannelDescriptionHint() {
+	fmt.Println("╔══════════════════════════════════════════════╗")
+	fmt.Println("║        РЕКОМЕНДОВАНИЙ ОПИС КАНАЛУ           ║")
+	fmt.Println("╠══════════════════════════════════════════════╣")
+	fmt.Println("║ Назва: Nintendo UA 🎮                        ║")
+	fmt.Println("║                                              ║")
+	fmt.Println("║ Опис (до 255 символів):                      ║")
+	fmt.Println("║ Найсвіжіші новини Nintendo українською —     ║")
+	fmt.Println("║ ігри, залізо, анонси та інсайди.             ║")
+	fmt.Println("║ Без води, з характером. 5 разів на день 🕹️   ║")
+	fmt.Println("║                                              ║")
+	fmt.Println("║ Як встановити:                               ║")
+	fmt.Println("║ Telegram → твій канал → Edit → Description  ║")
+	fmt.Println("╚══════════════════════════════════════════════╝")
 }

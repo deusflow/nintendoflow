@@ -3,23 +3,13 @@ package telegram
 import (
 	"fmt"
 
+	"github.com/deuswork/nintendoflow/internal/db"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// Article contains the data needed to post to Telegram.
-type Article struct {
-	BodyUA   string
-	ImageURL string
-}
-
 // PostArticle sends an article to the Telegram channel.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
-func PostArticle(bot *tgbotapi.BotAPI, channelID string, article Article) error {
-	text := article.BodyUA
-	if len([]rune(text)) > 1000 {
-		text = string([]rune(text)[:997]) + "..."
-	}
-
+func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
 	if article.ImageURL != "" {
 		photo := tgbotapi.PhotoConfig{
 			BaseFile: tgbotapi.BaseFile{
@@ -28,23 +18,61 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article Article) error 
 				},
 				File: tgbotapi.FileURL(article.ImageURL),
 			},
-			Caption:   text,
+			Caption:   buildCaption(&article, 1024),
 			ParseMode: "HTML",
 		}
+		photo.ReplyMarkup = makeKeyboard(article.SourceURL)
 		if _, err := bot.Send(photo); err != nil {
 			// fallback to text-only
-			return sendText(bot, channelID, text)
+			return sendText(bot, channelID, article)
 		}
 		return nil
 	}
-	return sendText(bot, channelID, text)
+	return sendText(bot, channelID, article)
 }
 
-func sendText(bot *tgbotapi.BotAPI, channelID string, text string) error {
-	msg := tgbotapi.NewMessageToChannel(channelID, text)
+func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
+	msg := tgbotapi.NewMessageToChannel(channelID, buildCaption(&article, 4096))
 	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = makeKeyboard(article.SourceURL)
 	if _, err := bot.Send(msg); err != nil {
 		return fmt.Errorf("telegram sendMessage: %w", err)
 	}
 	return nil
+}
+
+func makeKeyboard(sourceURL string) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("🔗 Читати повністю", sourceURL),
+		),
+	)
+}
+
+// buildCaption forms the final post text based on source type.
+func buildCaption(article *db.Article, maxLen int) string {
+	var prefix string
+	switch article.SourceType {
+	case "official":
+		prefix = "📢 <b>ОФІЦІЙНО</b>\n\n"
+	case "insider":
+		prefix = "🕵️ <i>Інсайд</i>\n\n"
+	case "aggregator":
+		prefix = "📡 <i>Чутки</i>\n\n"
+	default:
+		prefix = ""
+	}
+
+	full := prefix + article.BodyUA
+	runes := []rune(full)
+	if len(runes) <= maxLen {
+		return full
+	}
+
+	bodyRunes := []rune(article.BodyUA)
+	allowed := maxLen - len([]rune(prefix)) - 3
+	if allowed > 0 && allowed < len(bodyRunes) {
+		return prefix + string(bodyRunes[:allowed]) + "..."
+	}
+	return string(runes[:maxLen])
 }

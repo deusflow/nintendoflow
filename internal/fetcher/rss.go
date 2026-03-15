@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/deuswork/nintendoflow/internal/config"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -25,35 +26,35 @@ type Item struct {
 	ContentHash string
 }
 
-// FetchAll fetches all sources concurrently and returns deduplicated items.
-func FetchAll(ctx context.Context) []Item {
+// FetchAll fetches all active feeds concurrently and returns collected items.
+func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
 	var (
 		mu    sync.Mutex
-		Items []Item
+		items []Item
 		wg    sync.WaitGroup
 	)
 
-	for _, src := range Sources {
+	for _, feed := range feeds {
 		wg.Add(1)
-		go func(s Source) {
+		go func(f config.Feed) {
 			defer wg.Done()
-			items, err := fetchSource(ctx, s)
+			result, err := fetchSource(ctx, f)
 			if err != nil {
-				slog.Warn("fetch source failed", "source", s.Name, "error", err)
+				slog.Warn("fetch source failed", "source", f.Name, "error", err)
 				return
 			}
 			mu.Lock()
-			Items = append(Items, items...)
+			items = append(items, result...)
 			mu.Unlock()
-		}(src)
+		}(feed)
 	}
 	wg.Wait()
-	return Items
+	return items
 }
 
-func fetchSource(ctx context.Context, s Source) ([]Item, error) {
+func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", s.FeedURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", f.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
@@ -79,7 +80,7 @@ func fetchSource(ctx context.Context, s Source) ([]Item, error) {
 	var items []Item
 	for _, entry := range feed.Items {
 		link := entry.Link
-		if s.NeedsRedirectResolve {
+		if f.NeedsRedirectResolve {
 			resolved, err := ResolveRedirect(link)
 			if err == nil {
 				link = resolved
@@ -105,8 +106,8 @@ func fetchSource(ctx context.Context, s Source) ([]Item, error) {
 			Description: entry.Description,
 			ImageURL:    imgURL,
 			PublishedAt: pub,
-			SourceName:  s.Name,
-			SourceType:  s.Type,
+			SourceName:  f.Name,
+			SourceType:  f.Type,
 			ContentHash: hash,
 		})
 	}
