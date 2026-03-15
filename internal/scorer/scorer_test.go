@@ -7,17 +7,29 @@ import (
 )
 
 func TestShouldPostAllowsNintendoComparisonOnStrictFeed(t *testing.T) {
-	keywords := []config.Keyword{
-		{Word: "switch 2", Role: "anchor", Weight: 35},
-		{Word: "performance", Role: "comparison", Weight: 10},
-		{Word: "steam deck", Role: "comparison", Weight: 8},
-		{Word: "comparison", Role: "comparison", Weight: 10},
+	topics := map[string]config.Topic{
+		"hardware": {
+			Enabled:  true,
+			Priority: 100,
+			Keywords: []config.Keyword{
+				{Word: "switch 2", Role: "anchor", Weight: 35},
+			},
+		},
+		"comparison": {
+			Enabled:  true,
+			Priority: 100,
+			Keywords: []config.Keyword{
+				{Word: "performance", Role: "comparison", Weight: 10},
+				{Word: "steam deck", Role: "comparison", Weight: 8},
+				{Word: "comparison", Role: "comparison", Weight: 10},
+			},
+		},
 	}
 
 	result, ok, reason := ShouldPost(
 		"Switch 2 performance comparison with Steam Deck",
 		"Early benchmark talk points to better handheld performance.",
-		keywords,
+		topics,
 		25,
 		true,
 	)
@@ -33,17 +45,23 @@ func TestShouldPostAllowsNintendoComparisonOnStrictFeed(t *testing.T) {
 }
 
 func TestShouldPostRejectsNonNintendoComparisonOnStrictFeed(t *testing.T) {
-	keywords := []config.Keyword{
-		{Word: "performance", Role: "comparison", Weight: 10},
-		{Word: "comparison", Role: "comparison", Weight: 10},
-		{Word: "ps5", Role: "comparison", Weight: 4},
-		{Word: "xbox", Role: "comparison", Weight: 4},
+	topics := map[string]config.Topic{
+		"comparison": {
+			Enabled:  true,
+			Priority: 100,
+			Keywords: []config.Keyword{
+				{Word: "performance", Role: "comparison", Weight: 10},
+				{Word: "comparison", Role: "comparison", Weight: 10},
+				{Word: "ps5", Role: "comparison", Weight: 4},
+				{Word: "xbox", Role: "comparison", Weight: 4},
+			},
+		},
 	}
 
 	result, ok, reason := ShouldPost(
 		"PS5 vs Xbox performance comparison",
 		"A fresh graphics benchmark compares frame rates and resolution.",
-		keywords,
+		topics,
 		25,
 		true,
 	)
@@ -56,16 +74,22 @@ func TestShouldPostRejectsNonNintendoComparisonOnStrictFeed(t *testing.T) {
 }
 
 func TestShouldPostAllowsTrustedNintendoFeedWithoutExplicitAnchor(t *testing.T) {
-	keywords := []config.Keyword{
-		{Word: "performance", Role: "comparison", Weight: 10},
-		{Word: "comparison", Role: "comparison", Weight: 10},
-		{Word: "fps", Role: "comparison", Weight: 8},
+	topics := map[string]config.Topic{
+		"comparison": {
+			Enabled:  true,
+			Priority: 100,
+			Keywords: []config.Keyword{
+				{Word: "performance", Role: "comparison", Weight: 10},
+				{Word: "comparison", Role: "comparison", Weight: 10},
+				{Word: "fps", Role: "comparison", Weight: 8},
+			},
+		},
 	}
 
 	result, ok, reason := ShouldPost(
 		"Performance comparison shows cleaner 60 FPS mode",
 		"Frame-rate analysis focuses on handheld play.",
-		keywords,
+		topics,
 		25,
 		false,
 	)

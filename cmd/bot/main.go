@@ -61,12 +61,16 @@ func main() {
 		slog.Error("feeds load failed", "path", cfg.FeedsPath, "error", err)
 		os.Exit(1)
 	}
-	keywords, err := config.LoadKeywords(cfg.KeywordsPath)
+	topics, err := config.LoadKeywords(cfg.KeywordsPath)
 	if err != nil {
 		slog.Error("keywords load failed", "path", cfg.KeywordsPath, "error", err)
 		os.Exit(1)
 	}
-	config.LogConfigLoaded(len(feeds), len(keywords))
+	totalKeywords := 0
+	for _, t := range topics {
+		totalKeywords += len(t.Keywords)
+	}
+	config.LogConfigLoaded(len(feeds), totalKeywords)
 	logStage("config", stageStart, runStart)
 	stageStart = time.Now()
 
@@ -150,7 +154,7 @@ func main() {
 		}
 
 		// Score + Nintendo relevance gate
-		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, keywords, cfg.MinScore, item.RequireAnchor)
+		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, topics, cfg.MinScore, item.RequireAnchor)
 		if !ok {
 			slog.Debug("candidate filtered out", "reason", reason, "title", item.Title)
 			continue

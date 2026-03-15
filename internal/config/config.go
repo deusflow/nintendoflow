@@ -46,6 +46,20 @@ type Keyword struct {
 	Weight   int    `yaml:"weight"`
 }
 
+// Topic groups keywords under a named category with an enabled flag and a
+// priority multiplier. effective_weight = keyword.Weight * Priority / 100.
+// Priority defaults to 100 when the field is omitted in YAML (zero value).
+type Topic struct {
+	Enabled  bool      `yaml:"enabled"`
+	Priority int       `yaml:"priority"`
+	Keywords []Keyword `yaml:"keywords"`
+}
+
+// topicsFile is the top-level YAML wrapper for the new topics format.
+type topicsFile struct {
+	Topics map[string]Topic `yaml:"topics"`
+}
+
 func Load() (*Config, error) {
 	// Load .env if present (local dev); ignore error in CI
 	_ = godotenv.Load()
@@ -105,28 +119,38 @@ func LoadFeeds(path string) ([]Feed, error) {
 	return active, nil
 }
 
-func LoadKeywords(path string) ([]Keyword, error) {
+func LoadKeywords(path string) (map[string]Topic, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("keywords config: cannot read %q: %w", path, err)
 	}
-	var keywords []Keyword
-	if err := yaml.Unmarshal(raw, &keywords); err != nil {
+	var tf topicsFile
+	if err := yaml.Unmarshal(raw, &tf); err != nil {
 		return nil, fmt.Errorf("keywords config: cannot parse %q: %w", path, err)
 	}
-
-	filtered := make([]Keyword, 0, len(keywords))
-	for _, kw := range keywords {
-		if strings.TrimSpace(kw.Word) == "" {
-			continue
-		}
-		filtered = append(filtered, kw)
+	if tf.Topics == nil {
+		tf.Topics = make(map[string]Topic)
 	}
-	return filtered, nil
+	// Normalise: default priority=100 when the field is omitted (zero value).
+	for name, topic := range tf.Topics {
+		if topic.Priority == 0 {
+			topic.Priority = 100
+		}
+		// Drop keywords with an empty word.
+		valid := topic.Keywords[:0]
+		for _, kw := range topic.Keywords {
+			if strings.TrimSpace(kw.Word) != "" {
+				valid = append(valid, kw)
+			}
+		}
+		topic.Keywords = valid
+		tf.Topics[name] = topic
+	}
+	return tf.Topics, nil
 }
 
-func LogConfigLoaded(activeFeeds int, keywords int) {
-	slog.Info("config loaded", "active_feeds", activeFeeds, "keywords", keywords)
+func LogConfigLoaded(activeFeeds int, totalKeywords int) {
+	slog.Info("config loaded", "active_feeds", activeFeeds, "total_keywords", totalKeywords)
 }
 
 func getEnvOrDefault(key, def string) string {

@@ -7,12 +7,17 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/deuswork/nintendoflow/internal/config"
 	"github.com/mmcdole/gofeed"
 )
+
+// interDomainDelay is the minimum pause between consecutive requests to the
+// same hostname. Prevents rate-limiting on feeds like Google News.
+const interDomainDelay = 2 * time.Second
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
@@ -27,30 +32,62 @@ type Item struct {
 	ContentHash   string
 }
 
-// FetchAll fetches all active feeds concurrently and returns collected items.
+// FetchAll fetches all active feeds and returns collected items.
+// Feeds that share the same hostname are fetched sequentially with a
+// interDomainDelay pause between them. Feeds on different hostnames run
+// in parallel goroutines so the overall fetch stays fast.
 func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
+	// Group feeds by hostname so same-domain requests are serialised.
+	groups := make(map[string][]config.Feed)
+	for _, f := range feeds {
+		domain := extractDomain(f.URL)
+		groups[domain] = append(groups[domain], f)
+	}
+
 	var (
 		mu    sync.Mutex
 		items []Item
 		wg    sync.WaitGroup
 	)
 
-	for _, feed := range feeds {
+	for domain, group := range groups {
 		wg.Add(1)
-		go func(f config.Feed) {
+		go func(d string, domainFeeds []config.Feed) {
 			defer wg.Done()
-			result, err := fetchSource(ctx, f)
-			if err != nil {
-				slog.Warn("fetch source failed", "source", f.Name, "error", err)
-				return
+			for i, f := range domainFeeds {
+				if i > 0 {
+					// Respect rate limit: wait before the next request to this domain.
+					slog.Debug("domain throttle pause", "domain", d, "delay_ms", interDomainDelay.Milliseconds())
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(interDomainDelay):
+					}
+				}
+				result, err := fetchSource(ctx, f)
+				if err != nil {
+					slog.Warn("fetch source failed", "source", f.Name, "error", err)
+					continue
+				}
+				mu.Lock()
+				items = append(items, result...)
+				mu.Unlock()
 			}
-			mu.Lock()
-			items = append(items, result...)
-			mu.Unlock()
-		}(feed)
+		}(domain, group)
 	}
+
 	wg.Wait()
 	return items
+}
+
+// extractDomain returns the hostname of rawURL, used as the grouping key for
+// per-domain rate limiting. Falls back to the full URL string on parse error.
+func extractDomain(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	return u.Host
 }
 
 func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {

@@ -1,3 +1,4 @@
+content = """\
 # Topic-based keyword scoring rules loaded at runtime.
 # Edit and push to main - changes apply on next cron run.
 #
@@ -119,7 +120,7 @@ topics:
 
   monetization:
     enabled: true
-    priority: 90
+    priority: 70
     keywords:
       - word: "free-to-play"
         role: signal
@@ -153,7 +154,7 @@ topics:
 
   insider:
     enabled: true
-    priority: 100
+    priority: 60
     keywords:
       - word: "rumor"
         role: signal
@@ -254,3 +255,9 @@ topics:
       - word: "tips and tricks"
         role: reject
         weight: -40
+"""
+
+with open("/Users/deuswork/GolandProjects/nintendoflow/keywords.yaml", "w") as f:
+    f.write(content)
+print("keywords.yaml written successfully")
+
