@@ -26,9 +26,12 @@ jobs:
 
       - name: Run bot
         env:
-          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          GEMINI_API_KEY:      ${{ secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY:  ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GH_MODELS_API_KEY: ${{ secrets.GH_MODELS_API_KEY }}
+          AI_CONFIG_PATH: "ai_config.json"
         run: ./bot

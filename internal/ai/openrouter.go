@@ -23,6 +23,7 @@ var openRouterModels = []string{
 // OpenRouterProvider calls OpenRouter as fallback AI.
 type OpenRouterProvider struct {
 	apiKey     string
+	models     []string
 	httpClient *http.Client
 }
 
@@ -30,15 +31,26 @@ type OpenRouterProvider struct {
 func NewOpenRouterProvider(apiKey string) *OpenRouterProvider {
 	return &OpenRouterProvider{
 		apiKey:     apiKey,
+		models:     append([]string(nil), openRouterModels...),
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// NewOpenRouterProviderWithModel creates an OpenRouter provider with one configured model.
+// If model is empty, it falls back to the default internal free-model chain.
+func NewOpenRouterProviderWithModel(apiKey, model string) *OpenRouterProvider {
+	p := NewOpenRouterProvider(apiKey)
+	if strings.TrimSpace(model) != "" {
+		p.models = []string{strings.TrimSpace(model)}
+	}
+	return p
 }
 
 func (o *OpenRouterProvider) Name() string { return "openrouter-free" }
 
 func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	var lastErr error
-	for _, model := range openRouterModels {
+	for _, model := range o.models {
 		result, err := o.callModel(ctx, model, prompt)
 		if err != nil {
 			lastErr = err

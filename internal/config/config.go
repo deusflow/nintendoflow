@@ -84,9 +84,6 @@ func Load() (*Config, error) {
 	if cfg.TelegramChannelID == "" {
 		return nil, fmt.Errorf("TELEGRAM_CHANNEL_ID is required")
 	}
-	if cfg.GeminiAPIKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY is required")
-	}
 
 	return cfg, nil
 }

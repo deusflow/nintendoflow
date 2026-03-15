@@ -100,19 +100,21 @@ func main() {
 	stageStart = time.Now()
 
 	// -- 4. Init AI manager ------------------------------------------------
-	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey, cfg.GeminiModel)
-	if err != nil {
-		slog.Error("gemini init failed", "error", err)
-		os.Exit(1)
+	aiConfigPath := os.Getenv("AI_CONFIG_PATH")
+	if aiConfigPath == "" {
+		aiConfigPath = "ai_config.json"
 	}
 
-	providers := []ai.AIProvider{geminiProvider}
-	if cfg.OpenRouterAPIKey != "" {
-		providers = append(providers, ai.NewOpenRouterProvider(cfg.OpenRouterAPIKey))
-		slog.Info("OpenRouter fallback enabled")
-	} else {
-		slog.Info("OpenRouter fallback disabled (no OPENROUTER_API_KEY)")
+	providers, err := ai.BuildProvidersFromConfig(ctx, aiConfigPath)
+	if err != nil {
+		slog.Error("AI router init failed", "config_path", aiConfigPath, "error", err)
+		os.Exit(1)
 	}
+	providerNames := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		providerNames = append(providerNames, provider.Name())
+	}
+	slog.Info("AI router ready", "config_path", aiConfigPath, "providers", strings.Join(providerNames, ","))
 
 	manager := ai.NewManager(providers, maxAICallsPerRun, aiCallDelay)
 	logStage("ai_provider_init", stageStart, runStart)

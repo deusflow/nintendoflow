@@ -8,8 +8,7 @@ Telegram-бот що автоматично збирає новини про Nin
 |---|---|
 | Мова | Go 1.26 |
 | База даних | PostgreSQL (Neon) |
-| AI (primary) | Gemini 2.5 Flash |
-| AI (fallback) | OpenRouter free models |
+| AI routing | `ai_config.json` priority chain |
 | CI/CD | GitHub Actions |
 
 ## Структура
@@ -44,7 +43,10 @@ nintendoflow/
 | `TELEGRAM_BOT_TOKEN` | Токен бота від @BotFather |
 | `TELEGRAM_CHANNEL_ID` | ID каналу, напр. `@mychannel` |
 | `GEMINI_API_KEY` | Google AI Studio API key |
-| `OPENROUTER_API_KEY` | OpenRouter key (опціонально — fallback) |
+| `GITHUB_MODELS_API_KEY` | GitHub Models token |
+| `GROQ_API_KEY` | Groq API key |
+| `OPENROUTER_API_KEY` | OpenRouter key (optional, disabled by default) |
+| `AI_CONFIG_PATH` | Optional path to AI router JSON (default `ai_config.json`) |
 
 ## Розклад постингу
 
@@ -63,6 +65,12 @@ go run ./cmd/bot
 # або з dry run (не постить в TG):
 DRY_RUN=true go run ./cmd/bot
 ```
+
+## AI router config
+
+`ai_config.json` defines provider order and enablement. The bot picks the first enabled
+provider, and if it hits a rate-limit (429/quota) it falls back to the next enabled one.
+API keys are read only from environment variables named in `api_key_env`.
 
 ## Як змінити стиль
 
