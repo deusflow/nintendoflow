@@ -100,7 +100,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; NintendoNewsBot/1.0)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
 
 	resp, err := feedHTTPClient.Do(req)

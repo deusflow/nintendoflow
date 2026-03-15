@@ -180,7 +180,7 @@ func main() {
 
 	if len(candidates) < 1 {
 		slog.Info("no candidates this run")
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
@@ -243,12 +243,12 @@ func main() {
 	rewritten, err := manager.Generate(ctx, rewritePrompt)
 	if errors.Is(err, ai.ErrSkipped) {
 		slog.Info("AI skipped selected candidate", "title", selected.item.Title)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 	if err != nil {
 		slog.Error("AI rewrite failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 	rewriteProvider := manager.LastProvider()
@@ -272,14 +272,14 @@ func main() {
 
 	if cfg.DryRun {
 		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
 	articleID, err := db.InsertArticle(ctx, database, article)
 	if err != nil {
 		slog.Error("insert selected article failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 	article.ID = articleID
@@ -291,13 +291,13 @@ func main() {
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
 	if err != nil {
 		slog.Error("telegram bot init failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
 	if err := telegram.PostArticle(bot, cfg.TelegramChannelID, article); err != nil {
 		slog.Error("telegram post failed", "error", err, "article_id", article.ID)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
@@ -307,7 +307,7 @@ func main() {
 	posted = true
 	logStage("telegram_post", stageStart, runStart)
 
-	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.CallsBudget(), runStart)
+	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 }
 
 func buildSelectorPrompt(candidates []candidate) string {
@@ -354,13 +354,14 @@ func logStage(name string, stageStart, runStart time.Time) {
 	)
 }
 
-func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiCallsBudget int, runStart time.Time) {
+func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiRetries, aiCallsBudget int, runStart time.Time) {
 	slog.Info("run complete",
 		"fetched", fetched,
 		"filtered", filtered,
 		"ai_selector_used", aiSelectorUsed,
 		"ai_rewrite_used", aiRewriteUsed,
 		"ai_calls_used", aiCallsUsed,
+		"ai_retries", aiRetries,
 		"ai_calls_budget", aiCallsBudget,
 		"posted", posted,
 		"total_duration_ms", time.Since(runStart).Milliseconds(),

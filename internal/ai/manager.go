@@ -23,6 +23,7 @@ type Manager struct {
 	maxCalls           int
 	delay              time.Duration
 	callsUsed          int
+	retriesUsed        int
 	lastCallFinishedAt time.Time
 	lastProvider       string
 }
@@ -70,8 +71,11 @@ func (m *Manager) Generate(ctx context.Context, prompt string) (string, error) {
 	return "", fmt.Errorf("%w: %v", ErrAllProvidersFailed, lastErr)
 }
 
-// CallsUsed returns how many external AI calls were spent in this run.
+// CallsUsed returns how many budgeted Generate calls were spent in this run.
 func (m *Manager) CallsUsed() int { return m.callsUsed }
+
+// RetriesUsed returns how many extra retry calls were made after rate limits.
+func (m *Manager) RetriesUsed() int { return m.retriesUsed }
 
 // CallsBudget returns the max AI call budget for this run.
 func (m *Manager) CallsBudget() int { return m.maxCalls }
@@ -100,13 +104,15 @@ func (m *Manager) generateWithProvider(ctx context.Context, provider AIProvider,
 
 	slog.Warn("AI rate limited, retrying same provider once",
 		"provider", provider.Name(),
-		"retry_delay_ms", retryDelay.Milliseconds(),
+		"retry_delay_ms", (retryDelay + 5*time.Second).Milliseconds(),
 		"error", err.Error(),
 	)
-	if err := waitWithContext(ctx, retryDelay); err != nil {
+	if err := waitWithContext(ctx, retryDelay+5*time.Second); err != nil {
 		return "", err
 	}
 
+	// Retry call is outside Generate budget and tracked separately.
+	m.retriesUsed++
 	text, retryErr := m.callProvider(ctx, provider, prompt)
 	if retryErr == nil {
 		m.lastProvider = provider.Name()
