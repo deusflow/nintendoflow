@@ -59,10 +59,15 @@ func (c *Chain) Rewrite(ctx context.Context, title, body, source string) (text s
 // sanitizeOutput trims, checks for SKIP, and enforces the 900-char hard limit.
 // This is the shared utility used by all providers after they get a response.
 func sanitizeOutput(text string) (string, error) {
+	// Trim surrounding whitespace first
 	text = strings.TrimSpace(text)
-	if text == "SKIP" {
+
+	// Catch any variant of SKIP the AI might return, e.g. "SKIP.", " skip ", "Skip!"
+	normalized := strings.ToUpper(strings.Trim(text, ".,!? \n\r\t "))
+	if normalized == "SKIP" {
 		return "", ErrSkipped
 	}
+
 	if runes := []rune(text); len(runes) > 900 {
 		text = string(runes[:870]) + "..."
 	}
