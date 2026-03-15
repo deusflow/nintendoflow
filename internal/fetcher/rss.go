@@ -16,14 +16,15 @@ import (
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
-	Title       string
-	Link        string
-	Description string
-	ImageURL    string
-	PublishedAt *time.Time
-	SourceName  string
-	SourceType  string
-	ContentHash string
+	Title         string
+	Link          string
+	Description   string
+	ImageURL      string
+	PublishedAt   *time.Time
+	SourceName    string
+	SourceType    string
+	RequireAnchor bool
+	ContentHash   string
 }
 
 // FetchAll fetches all active feeds concurrently and returns collected items.
@@ -101,14 +102,15 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 		hash := hashContent(entry.Title + entry.Description)
 
 		items = append(items, Item{
-			Title:       entry.Title,
-			Link:        link,
-			Description: entry.Description,
-			ImageURL:    imgURL,
-			PublishedAt: pub,
-			SourceName:  f.Name,
-			SourceType:  f.Type,
-			ContentHash: hash,
+			Title:         entry.Title,
+			Link:          link,
+			Description:   entry.Description,
+			ImageURL:      imgURL,
+			PublishedAt:   pub,
+			SourceName:    f.Name,
+			SourceType:    f.Type,
+			RequireAnchor: f.RequireAnchor,
+			ContentHash:   hash,
 		})
 	}
 	return items, nil

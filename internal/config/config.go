@@ -35,12 +35,14 @@ type Feed struct {
 	Priority             int    `yaml:"priority"`
 	Active               bool   `yaml:"active"`
 	Type                 string `yaml:"type"`
+	RequireAnchor        bool   `yaml:"require_anchor"`
 	NeedsRedirectResolve bool   `yaml:"needs_redirect_resolve"`
 }
 
 type Keyword struct {
 	Word     string `yaml:"word"`
 	Category string `yaml:"category"`
+	Role     string `yaml:"role"`
 	Weight   int    `yaml:"weight"`
 }
 

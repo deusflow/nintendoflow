@@ -1,135 +1,313 @@
 # Keyword scoring rules loaded at runtime.
-# Edit weight and push to main: changes apply on next cron run.
+# Edit these entries and push to main: changes apply on next cron run.
+# role meanings:
+#   anchor     = explicit Nintendo context marker
+#   comparison = hardware/graphics/performance comparison marker
+#   signal     = general news value marker
+#   reject     = low-value content penalty
 
-- word: "nintendo direct"
-  category: event
-  weight: 100   # flagship Nintendo event; should almost always pass threshold
+- word: "nintendo"
+  category: brand
+  role: anchor
+  weight: 20   # safest anchor; broad feeds should almost never pass without it
 
-- word: "direct mini"
-  category: event
-  weight: 90    # smaller but still major event signal
-
-- word: "partner direct"
-  category: event
-  weight: 90    # partner showcase is highly relevant
+- word: "switch"
+  category: platform
+  role: anchor
+  weight: 22   # catches Switch-family stories even when brand name is omitted
 
 - word: "switch 2"
   category: hardware
-  weight: 95    # core audience topic
+  role: anchor
+  weight: 35   # highest-interest current hardware topic
 
 - word: "nintendo switch 2"
   category: hardware
-  weight: 95    # explicit hardware generation mention
+  role: anchor
+  weight: 40   # explicit next-gen Nintendo hardware mention
+
+- word: "switch oled"
+  category: hardware
+  role: anchor
+  weight: 22   # still relevant for hardware comparison and sales stories
+
+- word: "joy-con"
+  category: hardware
+  role: anchor
+  weight: 18   # strong Nintendo hardware signal
+
+- word: "joy con"
+  category: hardware
+  role: anchor
+  weight: 18   # spacing variant for Joy-Con
+
+- word: "eshop"
+  category: platform
+  role: anchor
+  weight: 18   # Nintendo commerce/platform-specific signal
+
+- word: "nintendo direct"
+  category: event
+  role: anchor
+  weight: 45   # flagship Nintendo event; should almost always pass
+
+- word: "direct mini"
+  category: event
+  role: anchor
+  weight: 35   # smaller but still clearly Nintendo-related event
+
+- word: "partner direct"
+  category: event
+  role: anchor
+  weight: 35   # partner showcase remains highly relevant
+
+- word: "mario"
+  category: franchise
+  role: anchor
+  weight: 20   # first-party mascot anchor; catches many headlines without 'Nintendo'
+
+- word: "zelda"
+  category: franchise
+  role: anchor
+  weight: 20   # flagship Nintendo franchise anchor
+
+- word: "pokemon"
+  category: franchise
+  role: anchor
+  weight: 18   # major Nintendo-adjacent franchise with high audience overlap
+
+- word: "metroid"
+  category: franchise
+  role: anchor
+  weight: 18   # useful for first-party coverage that skips the brand name
+
+- word: "splatoon"
+  category: franchise
+  role: anchor
+  weight: 18   # Nintendo-owned franchise anchor
+
+- word: "animal crossing"
+  category: franchise
+  role: anchor
+  weight: 18   # Nintendo-owned franchise anchor
+
+- word: "mario kart"
+  category: franchise
+  role: anchor
+  weight: 20   # common Nintendo headline anchor for hardware/performance stories
+
+- word: "super smash bros"
+  category: franchise
+  role: anchor
+  weight: 18   # franchise anchor for crossover/roster stories
 
 - word: "announced"
   category: release
-  weight: 60    # hard news indicator
+  role: signal
+  weight: 8    # useful only when combined with Nintendo context
 
 - word: "reveal"
   category: release
-  weight: 60    # announcement language is strong signal
+  role: signal
+  weight: 8    # generic news verb; keep modest to reduce cross-platform noise
 
 - word: "new game"
   category: release
-  weight: 50    # generic release signal, moderate confidence
+  role: signal
+  weight: 6    # broad signal; should not pass alone on general feeds
 
 - word: "launch"
   category: release
-  weight: 50    # shipping timing/newsworthy milestone
+  role: signal
+  weight: 8    # release milestone; modest because it is cross-platform language
 
 - word: "release date"
   category: release
-  weight: 55    # concrete timing is high utility for readers
+  role: signal
+  weight: 10   # concrete timing is useful, but only with Nintendo context
 
 - word: "free-to-play"
   category: monetization
-  weight: 45    # notable player-impact update
+  role: signal
+  weight: 8    # relevant when tied to Nintendo ecosystem news
 
 - word: "f2p"
   category: monetization
-  weight: 45    # shorthand variant of free-to-play
+  role: signal
+  weight: 8    # shorthand variant of free-to-play
 
 - word: "free to play"
   category: monetization
-  weight: 45    # phrase variant coverage
+  role: signal
+  weight: 8    # phrase variant coverage
 
 - word: "free game"
   category: monetization
-  weight: 40    # promotions and giveaways can be useful
+  role: signal
+  weight: 6    # useful but too broad to score highly by itself
 
 - word: "update"
   category: patch
-  weight: 30    # routine but still relevant
+  role: signal
+  weight: 6    # routine patch language; keep low to avoid generic gaming noise
 
 - word: "patch"
   category: patch
-  weight: 30    # routine maintenance signal
+  role: signal
+  weight: 6    # maintenance signal; modest weight only
 
 - word: "dlc"
   category: patch
-  weight: 35    # content expansion matters to players
+  role: signal
+  weight: 8    # expansion content matters, but still needs Nintendo context
 
 - word: "expansion"
   category: patch
-  weight: 35    # long-tail content relevance
+  role: signal
+  weight: 8    # long-tail content relevance with modest weight
 
 - word: "rumor"
   category: insider
-  weight: 20    # useful but less reliable
+  role: signal
+  weight: 5    # useful but less reliable; never enough alone
 
 - word: "leak"
   category: insider
-  weight: 20    # same as rumor; keep lower confidence
+  role: signal
+  weight: 5    # same as rumor; keep restrained
 
 - word: "insider"
   category: insider
-  weight: 20    # report context, not official
+  role: signal
+  weight: 5    # reporting context, not a Nintendo anchor by itself
 
 - word: "report"
   category: insider
-  weight: 20    # report language is softer signal
+  role: signal
+  weight: 5    # report language is soft signal only
 
 - word: "sale"
   category: commerce
-  weight: 10    # low urgency utility signal
+  role: signal
+  weight: 4    # low urgency utility signal
 
 - word: "discount"
   category: commerce
-  weight: 10    # low urgency utility signal
+  role: signal
+  weight: 4    # low urgency utility signal
 
 - word: "eshop sale"
   category: commerce
-  weight: 12    # slightly more relevant for Nintendo audience
+  role: anchor
+  weight: 12   # Nintendo platform-specific sale phrase; worth keeping as anchor
+
+- word: "vs"
+  category: comparison
+  role: comparison
+  weight: 10   # explicit comparison marker for Switch-vs-other-platform stories
+
+- word: "versus"
+  category: comparison
+  role: comparison
+  weight: 10   # spelled-out variant of vs
+
+- word: "comparison"
+  category: comparison
+  role: comparison
+  weight: 10   # allows hardware/graphics comparison coverage
+
+- word: "compared"
+  category: comparison
+  role: comparison
+  weight: 8    # softer comparison marker
+
+- word: "benchmark"
+  category: comparison
+  role: comparison
+  weight: 10   # performance testing stories are relevant when Nintendo is involved
+
+- word: "performance"
+  category: comparison
+  role: comparison
+  weight: 10   # keeps performance analysis eligible for posting
+
+- word: "graphics"
+  category: comparison
+  role: comparison
+  weight: 8    # graphics comparison should pass if Nintendo anchor is present
+
+- word: "fps"
+  category: comparison
+  role: comparison
+  weight: 8    # common shorthand in tech/performance comparison headlines
+
+- word: "frame rate"
+  category: comparison
+  role: comparison
+  weight: 8    # spelled-out FPS variant
+
+- word: "resolution"
+  category: comparison
+  role: comparison
+  weight: 8    # rendering-quality comparison signal
+
+- word: "ray tracing"
+  category: comparison
+  role: comparison
+  weight: 8    # hardware graphics capability comparison signal
+
+- word: "steam deck"
+  category: comparison_target
+  role: comparison
+  weight: 8    # common Nintendo handheld comparison target
+
+- word: "ps5"
+  category: comparison_target
+  role: comparison
+  weight: 4    # comparison target only; not enough without Nintendo anchor
+
+- word: "xbox"
+  category: comparison_target
+  role: comparison
+  weight: 4    # comparison target only; not enough without Nintendo anchor
 
 - word: "top 10"
   category: spam
-  weight: -50   # listicle penalty
+  role: reject
+  weight: -50  # listicle penalty
 
 - word: "best games of"
   category: spam
-  weight: -50   # evergreen roundup penalty
+  role: reject
+  weight: -50  # evergreen roundup penalty
 
 - word: "tier list"
   category: spam
-  weight: -50   # low-news-value content
+  role: reject
+  weight: -50  # low-news-value content
 
 - word: "our review"
   category: spam
-  weight: -35   # review content is less suitable for this bot
+  role: reject
+  weight: -35  # review content is less suitable for this bot
 
 - word: "we reviewed"
   category: spam
-  weight: -35   # review phrasing variant
+  role: reject
+  weight: -35  # review phrasing variant
 
 - word: "guide"
   category: spam
-  weight: -40   # guide/tutorial penalty
+  role: reject
+  weight: -40  # guide/tutorial penalty
 
 - word: "how to"
   category: spam
-  weight: -40   # tutorial phrasing variant
+  role: reject
+  weight: -40  # tutorial phrasing variant
 
 - word: "tips and tricks"
   category: spam
-  weight: -40   # evergreen helper content penalty
+  role: reject
+  weight: -40  # evergreen helper content penalty
 

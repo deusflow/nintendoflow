@@ -7,6 +7,7 @@
   priority: 100      # official first-party announcements
   active: true       # set false to disable without deleting
   type: official     # official / media / insider / aggregator
+  require_anchor: false  # official Nintendo source is already trusted as Nintendo-only
   needs_redirect_resolve: false  # direct feed URL
 
 - url: "https://www.nintendolife.com/feeds/latest"
@@ -15,6 +16,7 @@
   priority: 85       # high-quality Nintendo-focused media
   active: true
   type: media
+  require_anchor: false  # dedicated Nintendo outlet; titles may omit obvious Nintendo words
   needs_redirect_resolve: false
 
 - url: "https://mynintendonews.com/feed/"
@@ -23,6 +25,7 @@
   priority: 75       # broad Nintendo coverage
   active: true
   type: media
+  require_anchor: false  # dedicated Nintendo outlet; trust source context
   needs_redirect_resolve: false
 
 - url: "https://gonintendo.com/feed"
@@ -31,6 +34,7 @@
   priority: 75       # frequent updates, medium signal/noise
   active: true
   type: media
+  require_anchor: false  # dedicated Nintendo outlet; source context is usually enough
   needs_redirect_resolve: false
 
 - url: "https://nintendoeverything.com/feed/"
@@ -39,6 +43,7 @@
   priority: 75       # wide Nintendo beat, useful for fast pickups
   active: true
   type: media
+  require_anchor: false  # dedicated Nintendo outlet; allow context-driven headlines
   needs_redirect_resolve: false
 
 - url: "https://www.eurogamer.net/?format=rss"
@@ -47,6 +52,7 @@
   priority: 65       # broader games media, Nintendo subset
   active: true
   type: media
+  require_anchor: true   # broad outlet; demand explicit Nintendo context in title/body
   needs_redirect_resolve: false
 
 - url: "https://www.videogameschronicle.com/feed/"
@@ -55,6 +61,7 @@
   priority: 90       # strong insider/reporting signal
   active: true
   type: insider
+  require_anchor: true   # broader reporting outlet; filter non-Nintendo stories
   needs_redirect_resolve: false
 
 - url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+insider+leak&hl=en-US&gl=US&ceid=US:en"
@@ -63,6 +70,7 @@
   priority: 55       # aggregator, good for discovery but noisier
   active: true
   type: aggregator
+  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
   needs_redirect_resolve: true   # Google News redirects must be resolved
 
 - url: "https://news.google.com/rss/search?q=Nintendo+Direct+announce+2026&hl=en-US&gl=US&ceid=US:en"
@@ -71,6 +79,7 @@
   priority: 60       # event discovery feed
   active: true
   type: aggregator
+  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
   needs_redirect_resolve: true
 
 - url: "https://news.google.com/rss/search?q=Nintendo+hardware+new+console&hl=en-US&gl=US&ceid=US:en"
@@ -79,5 +88,6 @@
   priority: 55       # hardware rumor tracking feed
   active: true
   type: aggregator
+  require_anchor: true   # aggregators are noisy; explicit Nintendo anchor is mandatory
   needs_redirect_resolve: true
 

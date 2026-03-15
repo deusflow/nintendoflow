@@ -94,9 +94,10 @@ func main() {
 	}
 
 	var (
-		fetchedCount   = len(items)
-		dedupedCount   int
-		scoredOutCount int
+		fetchedCount        = len(items)
+		dedupedCount        int
+		scoredOutCount      int
+		anchorRejectedCount int
 	)
 
 	for _, item := range items {
@@ -117,10 +118,13 @@ func main() {
 			continue
 		}
 
-		// Score
-		s := scorer.Score(item.Title, item.Description, keywords)
-		if s < cfg.MinScore {
+		// Score + Nintendo relevance gate
+		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, keywords, cfg.MinScore, item.RequireAnchor)
+		if !ok {
 			scoredOutCount++
+			if reason == "missing_nintendo_anchor" {
+				anchorRejectedCount++
+			}
 			continue
 		}
 
@@ -131,7 +135,7 @@ func main() {
 			ImageURL:    item.ImageURL,
 			SourceName:  item.SourceName,
 			SourceType:  item.SourceType,
-			Score:       s,
+			Score:       result.Score,
 			PublishedAt: item.PublishedAt,
 		}
 
@@ -150,7 +154,7 @@ func main() {
 
 	if len(unposted) == 0 {
 		slog.Info("no new articles to post - silence is golden")
-		logStats(fetchedCount, dedupedCount, scoredOutCount, 0, 0, 0)
+		logStats(fetchedCount, dedupedCount, scoredOutCount, anchorRejectedCount, 0, 0, 0)
 		printChannelDescriptionHint()
 		return
 	}
@@ -223,15 +227,16 @@ func main() {
 	}
 
 	// -- 9. Summary log ----------------------------------------------------
-	logStats(fetchedCount, dedupedCount, scoredOutCount, postedCount, geminiCount, openRouterCount)
+	logStats(fetchedCount, dedupedCount, scoredOutCount, anchorRejectedCount, postedCount, geminiCount, openRouterCount)
 	printChannelDescriptionHint()
 }
 
-func logStats(fetched, deduped, scoredOut, posted, gemini, openRouter int) {
+func logStats(fetched, deduped, scoredOut, anchorRejected, posted, gemini, openRouter int) {
 	slog.Info("run complete",
 		"fetched", fetched,
 		"deduped", deduped,
 		"scored_out", scoredOut,
+		"anchor_rejected", anchorRejected,
 		"posted", posted,
 		"gemini_used", gemini,
 		"openrouter_used", openRouter,
