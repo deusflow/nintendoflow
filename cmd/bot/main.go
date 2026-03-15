@@ -185,6 +185,22 @@ func main() {
 
 	selected := topCandidates[selectedIdx]
 
+	// Step 6.5: fetch og:image only for the single winning article.
+	selected.item.ImageURL = ""
+	imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
+	ogImage, imageErr := fetcher.FetchOGImage(imageCtx, selected.item.Link)
+	imageCancel()
+	if imageErr != nil {
+		slog.Warn("og:image fetch failed, fallback to no image", "url", selected.item.Link, "error", imageErr)
+	} else if ogImage == "" {
+		slog.Info("og:image not found, fallback to no image", "url", selected.item.Link)
+	} else {
+		selected.item.ImageURL = ogImage
+		slog.Info("og:image extracted", "url", selected.item.Link)
+	}
+	logStage("image_fetch", stageStart, runStart)
+	stageStart = time.Now()
+
 	time.Sleep(20 * time.Second)
 	aiRewriteUsed = true
 	rewritten, err := provider.Rewrite(ctx, selected.item.Title, selected.item.Description, selected.item.SourceName)
