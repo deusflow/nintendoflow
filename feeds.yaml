@@ -32,7 +32,7 @@
   name: "GoNintendo"
   lang: en
   priority: 75       # frequent updates, medium signal/noise
-  active: true
+  active: false
   type: media
   require_anchor: false  # dedicated Nintendo outlet; source context is usually enough
   needs_redirect_resolve: false
@@ -104,7 +104,7 @@
   name: "IGN Nintendo"
   lang: en
   priority: 85
-  active: true
+  active: false
   type: media
   require_anchor: false
   needs_redirect_resolve: false

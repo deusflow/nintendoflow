@@ -85,14 +85,22 @@ func main() {
 
 	ctx := context.Background()
 
-	// -- 4. Init single AI provider (strict sequential, max 2 calls/run) --
+	// -- 4. Init AI chain --------------------------------------------------
 	geminiProvider, err := ai.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		slog.Error("gemini init failed", "error", err)
 		os.Exit(1)
 	}
-	provider := ai.AIProvider(geminiProvider)
-	slog.Info("AI provider selected", "provider", provider.Name())
+
+	providers := []ai.AIProvider{geminiProvider}
+	if cfg.OpenRouterAPIKey != "" {
+		providers = append(providers, ai.NewOpenRouterProvider(cfg.OpenRouterAPIKey))
+		slog.Info("OpenRouter fallback enabled")
+	} else {
+		slog.Info("OpenRouter fallback disabled (no OPENROUTER_API_KEY)")
+	}
+
+	chain := ai.NewChain(cfg.SleepBetweenAICalls, providers...)
 	logStage("ai_provider_init", stageStart, runStart)
 	stageStart = time.Now()
 
@@ -110,6 +118,17 @@ func main() {
 	cutoff := time.Now().Add(-48 * time.Hour)
 	candidates := make([]candidate, 0, len(items))
 
+	knownURLs, err := db.FetchRecentURLHashes(ctx, database, 48)
+	if err != nil {
+		slog.Warn("fetch recent url hashes failed", "error", err)
+		knownURLs = make(map[string]struct{})
+	}
+	knownTitles, err := db.FetchRecentTitleHashes(ctx, database, 48)
+	if err != nil {
+		slog.Warn("fetch recent title hashes failed", "error", err)
+		knownTitles = make(map[string]struct{})
+	}
+
 	for _, item := range items {
 		if item.PublishedAt == nil || item.PublishedAt.Before(cutoff) {
 			continue
@@ -118,12 +137,10 @@ func main() {
 		urlHash := dedup.HashURL(item.Link)
 		titleHash := dedup.HashTitle(item.Title)
 
-		exists, err := db.HashExists(database, urlHash, titleHash)
-		if err != nil {
-			slog.Warn("hash dedup check failed", "error", err)
+		if _, exists := knownURLs[urlHash]; exists {
 			continue
 		}
-		if exists {
+		if _, exists := knownTitles[titleHash]; exists {
 			continue
 		}
 
@@ -140,6 +157,8 @@ func main() {
 			urlHash:   urlHash,
 			titleHash: titleHash,
 		})
+		knownURLs[urlHash] = struct{}{}
+		knownTitles[titleHash] = struct{}{}
 	}
 	filteredCount = len(candidates)
 	logStage("local_filter", stageStart, runStart)
@@ -168,11 +187,12 @@ func main() {
 
 	time.Sleep(20 * time.Second)
 	aiSelectorUsed = true
-	rawSelection, err := provider.Complete(ctx, selectionPrompt)
+	rawSelection, selectorProvider, err := chain.Complete(ctx, selectionPrompt)
 	selectedIdx := 0
 	if err != nil {
 		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 	} else {
+		slog.Info("AI selector used", "provider", selectorProvider)
 		idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
 		if !ok {
 			slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
@@ -203,7 +223,7 @@ func main() {
 
 	time.Sleep(20 * time.Second)
 	aiRewriteUsed = true
-	rewritten, err := provider.Rewrite(ctx, selected.item.Title, selected.item.Description, selected.item.SourceName)
+	rewritten, rewriteProvider, err := chain.Rewrite(ctx, selected.item.Title, selected.item.Description, selected.item.SourceName)
 	if errors.Is(err, ai.ErrSkipped) {
 		slog.Info("AI skipped selected candidate", "title", selected.item.Title)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
@@ -214,6 +234,7 @@ func main() {
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
 		return
 	}
+	slog.Info("AI rewrite used", "provider", rewriteProvider)
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()
 
@@ -239,12 +260,12 @@ func main() {
 	}
 	article.ID = articleID
 
-	if err := db.UpdateBodyUA(database, article.ID, rewritten, provider.Name()); err != nil {
+	if err := db.UpdateBodyUA(database, article.ID, rewritten, rewriteProvider); err != nil {
 		slog.Warn("update body_ua failed", "error", err)
 	}
 
 	if cfg.DryRun {
-		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", provider.Name())
+		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, runStart)
 		return
 	}

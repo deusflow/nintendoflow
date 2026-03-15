@@ -18,6 +18,25 @@ func NewChain(sleep time.Duration, providers ...AIProvider) *Chain {
 	return &Chain{providers: providers, sleep: sleep}
 }
 
+// Complete runs a generic prompt through providers in order.
+// Returns generated text, provider name that succeeded, and error if all fail.
+func (c *Chain) Complete(ctx context.Context, prompt string) (text string, providerName string, err error) {
+	for _, p := range c.providers {
+		time.Sleep(c.sleep)
+
+		t, err := p.Complete(ctx, prompt)
+		if err != nil {
+			slog.Warn("AI provider failed, trying next",
+				"provider", p.Name(),
+				"error", err.Error(),
+			)
+			continue
+		}
+		return t, p.Name(), nil
+	}
+	return "", "", ErrAllProvidersFailed
+}
+
 // Rewrite rewrites the article text using the first available provider.
 // Returns the rewritten text, the provider name that succeeded, and any error.
 func (c *Chain) Rewrite(ctx context.Context, title, body, source string) (text string, providerName string, err error) {

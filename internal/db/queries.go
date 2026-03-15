@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -79,6 +80,58 @@ func HashExists(db *sql.DB, urlHash, titleHash string) (bool, error) {
 		FROM articles
 		WHERE url_hash = $1 OR title_hash = $2`, urlHash, titleHash).Scan(&count)
 	return count > 0, err
+}
+
+func FetchRecentURLHashes(ctx context.Context, db *sql.DB, hours int) (map[string]struct{}, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT url_hash
+		FROM articles
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
+		  AND url_hash IS NOT NULL
+		  AND url_hash <> ''`, hours)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]struct{})
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		result[h] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func FetchRecentTitleHashes(ctx context.Context, db *sql.DB, hours int) (map[string]struct{}, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT title_hash
+		FROM articles
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
+		  AND title_hash IS NOT NULL
+		  AND title_hash <> ''`, hours)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]struct{})
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		result[h] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // TopUnposted returns the top N unposted articles ordered by score DESC.
