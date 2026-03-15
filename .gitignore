@@ -1,0 +1,34 @@
+# Golang
+/bin/
+/build/
+*.exe
+*.test
+*.out
+
+# Dependency directories (remove the comment below if you use Go modules)
+/vendor/
+
+# IDE files
+.idea/
+*.iml
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Coverage
+coverage.out
+
+# Misc
+*.bak
+*.tmp
+
