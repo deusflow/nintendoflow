@@ -66,7 +66,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http status %d", resp.StatusCode)
@@ -123,7 +123,7 @@ func ResolveRedirect(rawURL string) (string, error) {
 	if err != nil {
 		return rawURL, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.Request.URL.String(), nil
 }
 

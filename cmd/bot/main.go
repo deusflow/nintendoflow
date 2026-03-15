@@ -49,7 +49,7 @@ func main() {
 		slog.Error("db connect failed", "error", err)
 		os.Exit(1)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if err := db.RunMigration(database); err != nil {
 		slog.Error("migration failed", "error", err)
