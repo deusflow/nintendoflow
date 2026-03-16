@@ -34,6 +34,15 @@ type Article struct {
 	CreatedAt   time.Time
 }
 
+type ModerationEditSession struct {
+	ChatID           int64
+	UserID           int64
+	ArticleID        int
+	PreviewMessageID int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 // InsertArticle inserts a new article and returns its id.
 func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 	status := a.Status
@@ -104,6 +113,65 @@ func UpdateArticleStatus(ctx context.Context, db *sql.DB, id int, status string)
 	return err
 }
 
+func UpsertModerationEditSession(ctx context.Context, db *sql.DB, session ModerationEditSession) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM moderation_edit_sessions
+		WHERE article_id=$1 AND NOT (chat_id=$2 AND user_id=$3)
+	`, session.ArticleID, session.ChatID, session.UserID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO moderation_edit_sessions (chat_id, user_id, article_id, preview_message_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		ON CONFLICT (chat_id, user_id)
+		DO UPDATE SET
+			article_id = EXCLUDED.article_id,
+			preview_message_id = EXCLUDED.preview_message_id,
+			updated_at = NOW()
+	`, session.ChatID, session.UserID, session.ArticleID, session.PreviewMessageID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func GetModerationEditSession(ctx context.Context, db *sql.DB, chatID, userID int64) (ModerationEditSession, error) {
+	var session ModerationEditSession
+	err := db.QueryRowContext(ctx, `
+		SELECT chat_id, user_id, article_id, preview_message_id, created_at, updated_at
+		FROM moderation_edit_sessions
+		WHERE chat_id=$1 AND user_id=$2
+	`, chatID, userID).Scan(
+		&session.ChatID,
+		&session.UserID,
+		&session.ArticleID,
+		&session.PreviewMessageID,
+		&session.CreatedAt,
+		&session.UpdatedAt,
+	)
+	if err != nil {
+		return ModerationEditSession{}, err
+	}
+	return session, nil
+}
+
+func DeleteModerationEditSession(ctx context.Context, db *sql.DB, chatID, userID int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM moderation_edit_sessions WHERE chat_id=$1 AND user_id=$2`, chatID, userID)
+	return err
+}
+
+func DeleteModerationEditSessionsByArticle(ctx context.Context, db *sql.DB, articleID int) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM moderation_edit_sessions WHERE article_id=$1`, articleID)
+	return err
+}
+
 func FetchRecentURLHashes(ctx context.Context, db *sql.DB, hours int) (map[string]struct{}, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT url_hash
@@ -164,6 +232,11 @@ func UpdateBodyUA(ctx context.Context, db *sql.DB, id int, bodyUA, aiProvider st
 	return err
 }
 
+func UpdateBodyUAOnly(ctx context.Context, db *sql.DB, id int, bodyUA string) error {
+	_, err := db.ExecContext(ctx, `UPDATE articles SET body_ua=$1 WHERE id=$2`, bodyUA, id)
+	return err
+}
+
 // MarkPosted sets posted_tg = true.
 func MarkPosted(ctx context.Context, db *sql.DB, id int) error {
 	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE, status=$2 WHERE id=$1`, id, StatusPublished)
@@ -212,6 +285,16 @@ CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
 CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_url_hash_unique ON articles(url_hash) WHERE url_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_title_hash ON articles(title_hash);
+CREATE TABLE IF NOT EXISTS moderation_edit_sessions (
+	chat_id            BIGINT NOT NULL,
+	user_id            BIGINT NOT NULL,
+	article_id         INT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+	preview_message_id INT NOT NULL,
+	created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (chat_id, user_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_moderation_edit_sessions_article_id ON moderation_edit_sessions(article_id);
 `)
 	return err
 }

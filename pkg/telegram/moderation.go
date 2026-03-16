@@ -41,6 +41,22 @@ func EditModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, te
 	return nil
 }
 
+func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
+	edit := tgbotapi.NewEditMessageText(chatID, messageID, buildModerationPreviewText(article))
+	edit.ParseMode = "HTML"
+	markup := moderationKeyboard(article.ID)
+	edit.ReplyMarkup = &markup
+	_, err := bot.Send(edit)
+	if err != nil {
+		return fmt.Errorf("telegram edit moderation preview: %w", err)
+	}
+	return nil
+}
+
+func BuildModerationEditWaitingText(article db.Article) string {
+	return fmt.Sprintf("<b>Edit mode enabled ✍️</b>\n\nSend your next text message to replace the article body for:\n<b>%s</b>", escapeHTML(article.TitleRaw))
+}
+
 func ParseModerationCallbackData(data string) (string, int, error) {
 	parts := strings.Split(data, ":")
 	if len(parts) != 3 || parts[0] != "mod" {
