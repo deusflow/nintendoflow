@@ -60,11 +60,12 @@
   require_anchor: false
   needs_redirect_resolve: false
 
+# GoNintendo feed URL returns 404 as of 2026-03 — disabled until URL is confirmed.
 - url: "https://gonintendo.com/feed"
   name: "GoNintendo"
   lang: en
   priority: 78
-  active: true
+  active: false
   type: media
   require_anchor: false
   needs_redirect_resolve: false
@@ -92,25 +93,41 @@
   needs_redirect_resolve: false
 
 # ============================================================
-# REDDIT
+# REDDIT — JSON API
+# Reddit blocks RSS from GitHub Actions (Azure) IP ranges at the WAF level.
+# The JSON API uses a separate routing layer and is more reliable from
+# datacenter IPs, especially with REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET
+# (Application-Only OAuth2 — no user login needed).
 # ============================================================
 
-- url: "https://www.reddit.com/r/NintendoSwitch/new/.rss"
+- url: "https://www.reddit.com/r/NintendoSwitch/new.json?limit=50&raw_json=1"
   name: "Reddit - NintendoSwitch"
   lang: en
   priority: 68
   active: true
   type: aggregator
+  fetch_mode: reddit_json
   require_anchor: false
   needs_redirect_resolve: false
 
-- url: "https://www.reddit.com/r/nintendo/new/.rss"
+- url: "https://www.reddit.com/r/nintendo/new.json?limit=50&raw_json=1"
   name: "Reddit - Nintendo"
   lang: en
   priority: 65
   active: true
   type: aggregator
+  fetch_mode: reddit_json
   require_anchor: false
+  needs_redirect_resolve: false
+
+- url: "https://www.reddit.com/r/GamingLeaksAndRumours/new.json?limit=50&raw_json=1"
+  name: "Reddit - Gaming Leaks"
+  lang: en
+  priority: 70
+  active: true
+  type: aggregator
+  fetch_mode: reddit_json
+  require_anchor: true
   needs_redirect_resolve: false
 
 # ============================================================

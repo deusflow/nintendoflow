@@ -70,9 +70,15 @@ func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
 					case <-time.After(interDomainDelay):
 					}
 				}
-				result, err := fetchSource(ctx, f)
+				var result []Item
+				var err error
+				if f.FetchMode == "reddit_json" {
+					result, err = FetchRedditJSON(ctx, f)
+				} else {
+					result, err = fetchSource(ctx, f)
+				}
 				if err != nil {
-					slog.Warn("fetch source failed", "source", f.Name, "error", err)
+					slog.Warn("fetch source failed", "source", f.Name, "fetch_mode", f.FetchMode, "error", err)
 					continue
 				}
 				mu.Lock()

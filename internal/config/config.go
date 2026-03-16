@@ -34,6 +34,9 @@ type Feed struct {
 	Type                 string `yaml:"type"`
 	RequireAnchor        bool   `yaml:"require_anchor"`
 	NeedsRedirectResolve bool   `yaml:"needs_redirect_resolve"`
+	// FetchMode controls the fetcher backend.
+	// Values: "" / "rss" (default RSS parser) | "reddit_json" (Reddit JSON API).
+	FetchMode string `yaml:"fetch_mode"`
 }
 
 type Keyword struct {
