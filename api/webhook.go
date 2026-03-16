@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deuswork/nintendoflow/internal/db"
-	"github.com/deuswork/nintendoflow/internal/telegram"
+	"github.com/deuswork/nintendoflow/pkg/db"
+	"github.com/deuswork/nintendoflow/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 

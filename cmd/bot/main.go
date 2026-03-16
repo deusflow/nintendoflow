@@ -14,14 +14,14 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"github.com/deuswork/nintendoflow/internal/ai"
-	"github.com/deuswork/nintendoflow/internal/cleaner"
-	"github.com/deuswork/nintendoflow/internal/config"
-	"github.com/deuswork/nintendoflow/internal/db"
-	"github.com/deuswork/nintendoflow/internal/dedup"
-	"github.com/deuswork/nintendoflow/internal/fetcher"
-	"github.com/deuswork/nintendoflow/internal/scorer"
-	"github.com/deuswork/nintendoflow/internal/telegram"
+	"github.com/deuswork/nintendoflow/pkg/ai"
+	"github.com/deuswork/nintendoflow/pkg/cleaner"
+	"github.com/deuswork/nintendoflow/pkg/config"
+	"github.com/deuswork/nintendoflow/pkg/db"
+	"github.com/deuswork/nintendoflow/pkg/dedup"
+	"github.com/deuswork/nintendoflow/pkg/fetcher"
+	"github.com/deuswork/nintendoflow/pkg/scorer"
+	"github.com/deuswork/nintendoflow/pkg/telegram"
 )
 
 const (

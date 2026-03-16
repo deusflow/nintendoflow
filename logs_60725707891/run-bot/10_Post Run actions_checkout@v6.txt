@@ -1,0 +1,32 @@
+﻿2026-03-16T07:33:27.9587607Z Post job cleanup.
+2026-03-16T07:33:28.0340961Z [command]/usr/bin/git version
+2026-03-16T07:33:28.0376991Z git version 2.53.0
+2026-03-16T07:33:28.0411554Z Temporarily overriding HOME='/home/runner/work/_temp/9c381861-1b15-4d70-ac49-d913d6c1edd4' before making global git config changes
+2026-03-16T07:33:28.0412872Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-16T07:33:28.0416617Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/nintendoflow/nintendoflow
+2026-03-16T07:33:28.0443046Z Removing SSH command configuration
+2026-03-16T07:33:28.0449183Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-16T07:33:28.0477723Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-16T07:33:28.0654929Z Removing HTTP extra header
+2026-03-16T07:33:28.0659454Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-16T07:33:28.0687827Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-16T07:33:28.0860891Z Removing includeIf entries pointing to credentials config files
+2026-03-16T07:33:28.0867431Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-16T07:33:28.0887008Z includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git.path
+2026-03-16T07:33:28.0887940Z includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git/worktrees/*.path
+2026-03-16T07:33:28.0888700Z includeif.gitdir:/github/workspace/.git.path
+2026-03-16T07:33:28.0889280Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-16T07:33:28.0896176Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git.path
+2026-03-16T07:33:28.0913343Z /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.0922234Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git.path /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.0949288Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git/worktrees/*.path
+2026-03-16T07:33:28.0966216Z /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.0974407Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.0999019Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-03-16T07:33:28.1015133Z /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.1021038Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.1044434Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-16T07:33:28.1061090Z /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.1067884Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:33:28.1093809Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-16T07:33:28.1265099Z Removing credentials config '/home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config'
