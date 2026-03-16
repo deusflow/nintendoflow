@@ -12,12 +12,14 @@ CREATE TABLE IF NOT EXISTS articles (
     source_type  TEXT NOT NULL DEFAULT 'media',
     score        INT DEFAULT 0,
     posted_tg    BOOLEAN DEFAULT FALSE,
+    status       TEXT NOT NULL DEFAULT 'pending',
     ai_provider  TEXT,
     published_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_posted_tg    ON articles(posted_tg);
+CREATE INDEX IF NOT EXISTS idx_articles_status       ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at   ON articles(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
 CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);

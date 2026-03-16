@@ -43,10 +43,15 @@ nintendoflow/
 | `TELEGRAM_BOT_TOKEN` | Токен бота від @BotFather |
 | `TELEGRAM_CHANNEL_ID` | ID каналу, напр. `@mychannel` |
 | `GEMINI_API_KEY` | Google AI Studio API key |
-| `GITHUB_MODELS_API_KEY` | GitHub Models token |
+| `GH_MODELS_API_KEY` | GitHub Models token |
 | `GROQ_API_KEY` | Groq API key |
 | `OPENROUTER_API_KEY` | OpenRouter key (optional, disabled by default) |
 | `AI_CONFIG_PATH` | Optional path to AI router JSON (default `ai_config.json`) |
+| `TEST_TELEGRAM_TOKEN` | Test bot token for moderation preview + webhook callbacks |
+| `TEST_CHANNEL_ID` | Test channel where approved posts are published |
+| `TEST_ADMIN_CHAT_ID` | Admin chat/group for preview moderation messages (optional, fallback: `TEST_CHANNEL_ID`) |
+| `TEST_MODERATION_MODE` | Enable two-step test pipeline (`true`/`false`) |
+| `TELEGRAM_WEBHOOK_SECRET` | Optional secret token for Telegram webhook validation |
 
 ## Розклад постингу
 
@@ -71,6 +76,18 @@ DRY_RUN=true go run ./cmd/bot
 `ai_config.json` defines provider order and enablement. The bot picks the first enabled
 provider, and if it hits a rate-limit (429/quota) it falls back to the next enabled one.
 API keys are read only from environment variables named in `api_key_env`.
+
+## Test Moderation Pipeline
+
+- Workflow: `.github/workflows/cron-test.yml`
+- Behavior (`TEST_MODERATION_MODE=true`):
+  - bot fetches/scorers/rewrites as usual,
+  - saves article to DB with `status=pending`,
+  - sends moderation preview with inline buttons: `Publish`, `Edit`, `Reject`.
+- Webhook endpoint: `api/webhook.go` (Vercel Go function)
+  - `Publish` -> post to `TEST_CHANNEL_ID`, update DB status to `published`.
+  - `Reject` -> update DB status to `rejected`.
+  - `Edit` -> mark status as `needs_edit`.
 
 ## Як змінити стиль
 

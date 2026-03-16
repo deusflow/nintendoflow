@@ -12,17 +12,21 @@ import (
 )
 
 type Config struct {
-	DatabaseURL       string
-	TelegramBotToken  string
-	TelegramChannelID string
-	GeminiAPIKey      string
-	OpenRouterAPIKey  string // optional
-	GeminiModel       string
-	MinScore          int
-	RecentTitlesHours int
-	DryRun            bool
-	FeedsPath         string
-	KeywordsPath      string
+	DatabaseURL        string
+	TelegramBotToken   string
+	TelegramChannelID  string
+	TestTelegramToken  string
+	TestChannelID      string
+	TestAdminChatID    string
+	GeminiAPIKey       string
+	OpenRouterAPIKey   string // optional
+	GeminiModel        string
+	MinScore           int
+	RecentTitlesHours  int
+	DryRun             bool
+	TestModerationMode bool
+	FeedsPath          string
+	KeywordsPath       string
 }
 
 type Feed struct {
@@ -66,27 +70,40 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		TelegramBotToken:  os.Getenv("TELEGRAM_BOT_TOKEN"),
-		TelegramChannelID: os.Getenv("TELEGRAM_CHANNEL_ID"),
-		GeminiAPIKey:      os.Getenv("GEMINI_API_KEY"),
-		OpenRouterAPIKey:  os.Getenv("OPENROUTER_API_KEY"), // optional
-		GeminiModel:       getEnvOrDefault("GEMINI_MODEL", "gemini-2.5-flash"),
-		MinScore:          getEnvInt("MIN_SCORE", 4),
-		RecentTitlesHours: getEnvInt("RECENT_TITLES_HOURS", 24),
-		DryRun:            os.Getenv("DRY_RUN") == "true",
-		FeedsPath:         getEnvOrDefault("FEEDS_PATH", "feeds.yaml"),
-		KeywordsPath:      getEnvOrDefault("KEYWORDS_PATH", "keywords.yaml"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramChannelID:  os.Getenv("TELEGRAM_CHANNEL_ID"),
+		TestTelegramToken:  os.Getenv("TEST_TELEGRAM_TOKEN"),
+		TestChannelID:      os.Getenv("TEST_CHANNEL_ID"),
+		TestAdminChatID:    os.Getenv("TEST_ADMIN_CHAT_ID"),
+		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
+		OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"), // optional
+		GeminiModel:        getEnvOrDefault("GEMINI_MODEL", "gemini-2.5-flash"),
+		MinScore:           getEnvInt("MIN_SCORE", 4),
+		RecentTitlesHours:  getEnvInt("RECENT_TITLES_HOURS", 24),
+		DryRun:             os.Getenv("DRY_RUN") == "true",
+		TestModerationMode: os.Getenv("TEST_MODERATION_MODE") == "true",
+		FeedsPath:          getEnvOrDefault("FEEDS_PATH", "feeds.yaml"),
+		KeywordsPath:       getEnvOrDefault("KEYWORDS_PATH", "keywords.yaml"),
 	}
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.TelegramBotToken == "" {
-		return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
-	}
-	if cfg.TelegramChannelID == "" {
-		return nil, fmt.Errorf("TELEGRAM_CHANNEL_ID is required")
+	if cfg.TestModerationMode {
+		if cfg.TestTelegramToken == "" {
+			return nil, fmt.Errorf("TEST_TELEGRAM_TOKEN is required when TEST_MODERATION_MODE=true")
+		}
+		if cfg.TestChannelID == "" {
+			return nil, fmt.Errorf("TEST_CHANNEL_ID is required when TEST_MODERATION_MODE=true")
+		}
+	} else {
+		if cfg.TelegramBotToken == "" {
+			return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
+		}
+		if cfg.TelegramChannelID == "" {
+			return nil, fmt.Errorf("TELEGRAM_CHANNEL_ID is required")
+		}
 	}
 
 	return cfg, nil

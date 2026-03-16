@@ -3,7 +3,15 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
+)
+
+const (
+	StatusPending   = "pending"
+	StatusPublished = "published"
+	StatusRejected  = "rejected"
+	StatusNeedsEdit = "needs_edit"
 )
 
 type Article struct {
@@ -21,27 +29,79 @@ type Article struct {
 	Score       int
 	PostedTG    bool
 	AIProvider  string
+	Status      string
 	PublishedAt *time.Time
 	CreatedAt   time.Time
 }
 
 // InsertArticle inserts a new article and returns its id.
 func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
+	status := a.Status
+	if status == "" {
+		status = StatusPending
+	}
 	var id int
 	err := db.QueryRowContext(ctx, `
 		INSERT INTO articles
-			(source_url, url_hash, title_hash, content_hash, title_raw, image_url, source_name, source_type, score, published_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			(source_url, url_hash, title_hash, content_hash, title_raw, image_url, source_name, source_type, score, status, published_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (source_url) DO UPDATE
-		SET score=GREATEST(articles.score, EXCLUDED.score)
+		SET score=GREATEST(articles.score, EXCLUDED.score),
+			status=CASE
+				WHEN articles.status='published' THEN articles.status
+				ELSE EXCLUDED.status
+			END
 		RETURNING id`,
 		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw, nullStr(a.ImageURL),
-		a.SourceName, a.SourceType, a.Score, a.PublishedAt,
+		a.SourceName, a.SourceType, a.Score, status, a.PublishedAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 	return id, nil
+}
+
+func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
+	var a Article
+	err := db.QueryRowContext(ctx, `
+		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
+		FROM articles
+		WHERE id=$1`, id).
+		Scan(
+			&a.ID,
+			&a.SourceURL,
+			&a.URLHash,
+			&a.TitleHash,
+			&a.ContentHash,
+			&a.TitleRaw,
+			&a.TitleUA,
+			&a.BodyUA,
+			&a.ImageURL,
+			&a.SourceName,
+			&a.SourceType,
+			&a.Score,
+			&a.PostedTG,
+			&a.AIProvider,
+			&a.Status,
+			&a.PublishedAt,
+			&a.CreatedAt,
+		)
+	if err != nil {
+		return Article{}, err
+	}
+	return a, nil
+}
+
+func UpdateArticleStatus(ctx context.Context, db *sql.DB, id int, status string) error {
+	switch status {
+	case StatusPending, StatusPublished, StatusRejected, StatusNeedsEdit:
+	default:
+		return fmt.Errorf("invalid article status: %s", status)
+	}
+	_, err := db.ExecContext(ctx, `UPDATE articles SET status=$1 WHERE id=$2`, status, id)
+	return err
 }
 
 func FetchRecentURLHashes(ctx context.Context, db *sql.DB, hours int) (map[string]struct{}, error) {
@@ -106,7 +166,7 @@ func UpdateBodyUA(ctx context.Context, db *sql.DB, id int, bodyUA, aiProvider st
 
 // MarkPosted sets posted_tg = true.
 func MarkPosted(ctx context.Context, db *sql.DB, id int) error {
-	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE WHERE id=$1`, id)
+	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE, status=$2 WHERE id=$1`, id, StatusPublished)
 	return err
 }
 
@@ -133,13 +193,20 @@ CREATE TABLE IF NOT EXISTS articles (
     source_type  TEXT NOT NULL DEFAULT 'media',
     score        INT DEFAULT 0,
     posted_tg    BOOLEAN DEFAULT FALSE,
+	status       TEXT NOT NULL DEFAULT 'pending',
     ai_provider  TEXT,
     published_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS url_hash TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS title_hash TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT;
+UPDATE articles SET status='published' WHERE posted_tg=TRUE AND (status IS NULL OR status='');
+UPDATE articles SET status='pending' WHERE posted_tg=FALSE AND (status IS NULL OR status='');
+ALTER TABLE articles ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE articles ALTER COLUMN status SET NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_posted_tg    ON articles(posted_tg);
+CREATE INDEX IF NOT EXISTS idx_articles_status       ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at   ON articles(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
 CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);
