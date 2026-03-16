@@ -8,7 +8,7 @@ import (
 
 func TestShouldPostAllowsNintendoComparisonOnStrictFeed(t *testing.T) {
 	topics := map[string]config.Topic{
-		"hardware": {
+		"hardware_anchor": {
 			Enabled:  true,
 			Priority: 100,
 			Keywords: []config.Keyword{
@@ -98,5 +98,97 @@ func TestShouldPostAllowsTrustedNintendoFeedWithoutExplicitAnchor(t *testing.T) 
 	}
 	if result.HasAnchor {
 		t.Fatalf("did not expect explicit anchor for this test case")
+	}
+}
+
+func TestEvaluateAppliesTopicPriorityMultiplier(t *testing.T) {
+	topics := map[string]config.Topic{
+		"hardware_tech": {
+			Enabled:  true,
+			Priority: 180,
+			Keywords: []config.Keyword{
+				{Word: "developer insight", Role: "tech", Weight: 75},
+				{Word: "portable mode", Role: "tech", Weight: 70},
+			},
+		},
+	}
+
+	result := Evaluate(
+		"Developer insight on portable mode",
+		"Early analysis mentions portable mode again.",
+		topics,
+	)
+
+	// 75*180/100 + 70*180/100 = 135 + 126 = 261.
+	if result.Score != 261 {
+		t.Fatalf("expected score=261 with priority multiplier, got %d", result.Score)
+	}
+	if result.TechScore != 261 {
+		t.Fatalf("expected tech score=261 with priority multiplier, got %d", result.TechScore)
+	}
+}
+
+func TestShouldPostHighTechScoreBypassesAnchorOnStrictFeed(t *testing.T) {
+	topics := map[string]config.Topic{
+		"hardware_tech": {
+			Enabled:  true,
+			Priority: 180,
+			Keywords: []config.Keyword{
+				{Word: "developer insight", Role: "tech", Weight: 75},
+				{Word: "portable mode", Role: "tech", Weight: 70},
+				{Word: "hidden capabilities", Role: "tech", Weight: 85},
+			},
+		},
+	}
+
+	result, ok, reason := ShouldPost(
+		"Developer insight reveals hidden capabilities in portable mode",
+		"Technical discussion focuses on hidden capabilities only.",
+		topics,
+		4,
+		true,
+	)
+
+	if !ok {
+		t.Fatalf("expected strict feed to accept article via high tech bypass, got ok=false reason=%s result=%+v", reason, result)
+	}
+	if result.TechScore < strictFeedHighTechBypassScore {
+		t.Fatalf("expected tech score to exceed bypass threshold, got %d", result.TechScore)
+	}
+	if reason != "accepted_via_high_tech" {
+		t.Fatalf("expected accepted_via_high_tech, got %s", reason)
+	}
+	if result.HasAnchor {
+		t.Fatalf("did not expect anchor to be detected")
+	}
+}
+
+func TestShouldPostLowTechScoreStillNeedsAnchorOnStrictFeed(t *testing.T) {
+	topics := map[string]config.Topic{
+		"hardware_tech": {
+			Enabled:  true,
+			Priority: 180,
+			Keywords: []config.Keyword{
+				{Word: "portable mode", Role: "tech", Weight: 70},
+			},
+		},
+	}
+
+	result, ok, reason := ShouldPost(
+		"Portable mode looks promising",
+		"Technical discussion focuses on portable mode only.",
+		topics,
+		4,
+		true,
+	)
+
+	if ok {
+		t.Fatalf("expected strict feed to reject low-tech-only article, got ok=true result=%+v", result)
+	}
+	if result.TechScore >= strictFeedHighTechBypassScore {
+		t.Fatalf("expected tech score below bypass threshold, got %d", result.TechScore)
+	}
+	if reason != "missing_nintendo_anchor" {
+		t.Fatalf("expected missing_nintendo_anchor, got %s", reason)
 	}
 }

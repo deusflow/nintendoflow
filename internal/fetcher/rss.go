@@ -27,15 +27,16 @@ var (
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
-	Title         string
-	Link          string
-	Description   string
-	ImageURL      string
-	PublishedAt   *time.Time
-	SourceName    string
-	SourceType    string
-	RequireAnchor bool
-	ContentHash   string
+	Title          string
+	Link           string
+	Description    string
+	ImageURL       string
+	PublishedAt    *time.Time
+	SourceName     string
+	SourcePriority int
+	SourceType     string
+	RequireAnchor  bool
+	ContentHash    string
 }
 
 // FetchAll fetches all active feeds and returns collected items.
@@ -70,13 +71,15 @@ func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
 					case <-time.After(interDomainDelay):
 					}
 				}
+				feedCtx, cancel := withFeedTimeout(ctx, f)
 				var result []Item
 				var err error
 				if f.FetchMode == "reddit_json" {
-					result, err = FetchRedditJSON(ctx, f)
+					result, err = FetchRedditJSON(feedCtx, f)
 				} else {
-					result, err = fetchSource(ctx, f)
+					result, err = fetchSource(feedCtx, f)
 				}
+				cancel()
 				if err != nil {
 					slog.Warn("fetch source failed", "source", f.Name, "fetch_mode", f.FetchMode, "error", err)
 					continue
@@ -155,15 +158,16 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 		hash := hashContent(entry.Title + entry.Description)
 
 		items = append(items, Item{
-			Title:         entry.Title,
-			Link:          link,
-			Description:   entry.Description,
-			ImageURL:      imgURL,
-			PublishedAt:   pub,
-			SourceName:    f.Name,
-			SourceType:    f.Type,
-			RequireAnchor: f.RequireAnchor,
-			ContentHash:   hash,
+			Title:          entry.Title,
+			Link:           link,
+			Description:    entry.Description,
+			ImageURL:       imgURL,
+			PublishedAt:    pub,
+			SourceName:     f.Name,
+			SourcePriority: f.Priority,
+			SourceType:     f.Type,
+			RequireAnchor:  f.RequireAnchor,
+			ContentHash:    hash,
 		})
 	}
 	return items, nil
@@ -190,4 +194,11 @@ func isRedditHost(u *url.URL) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "reddit.com" || strings.HasSuffix(host, ".reddit.com")
+}
+
+func withFeedTimeout(parent context.Context, f config.Feed) (context.Context, context.CancelFunc) {
+	if f.TimeoutSeconds <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, time.Duration(f.TimeoutSeconds)*time.Second)
 }

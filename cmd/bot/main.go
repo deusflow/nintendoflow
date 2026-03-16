@@ -32,9 +32,12 @@ const (
 type candidate struct {
 	item      fetcher.Item
 	score     int
+	rankScore int
 	urlHash   string
 	titleHash string
 }
+
+const feedPriorityRankingScale = 2
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -170,6 +173,7 @@ func main() {
 		candidates = append(candidates, candidate{
 			item:      item,
 			score:     result.Score,
+			rankScore: candidateRankingScore(result.Score, item.SourcePriority),
 			urlHash:   urlHash,
 			titleHash: titleHash,
 		})
@@ -186,12 +190,7 @@ func main() {
 		return
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].score == candidates[j].score {
-			return candidates[i].item.PublishedAt.After(*candidates[j].item.PublishedAt)
-		}
-		return candidates[i].score > candidates[j].score
-	})
+	sortCandidates(candidates)
 
 	topN := 5
 	if len(candidates) < topN {
@@ -354,6 +353,28 @@ func logStage(name string, stageStart, runStart time.Time) {
 		"stage_duration_ms", time.Since(stageStart).Milliseconds(),
 		"since_start_ms", time.Since(runStart).Milliseconds(),
 	)
+}
+
+func candidateRankingScore(contentScore, sourcePriority int) int {
+	if sourcePriority <= 0 {
+		sourcePriority = 100
+	}
+	return contentScore * (100 + sourcePriority/feedPriorityRankingScale) / 100
+}
+
+func sortCandidates(candidates []candidate) {
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].rankScore == candidates[j].rankScore {
+			if candidates[i].score != candidates[j].score {
+				return candidates[i].score > candidates[j].score
+			}
+			if candidates[i].item.SourcePriority != candidates[j].item.SourcePriority {
+				return candidates[i].item.SourcePriority > candidates[j].item.SourcePriority
+			}
+			return candidates[i].item.PublishedAt.After(*candidates[j].item.PublishedAt)
+		}
+		return candidates[i].rankScore > candidates[j].rankScore
+	})
 }
 
 func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiRetries, aiCallsBudget int, runStart time.Time) {

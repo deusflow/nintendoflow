@@ -8,9 +8,12 @@ import (
 
 type Result struct {
 	Score         int
+	TechScore     int
 	HasAnchor     bool
 	HasComparison bool
 }
+
+const strictFeedHighTechBypassScore = 240
 
 // Evaluate computes relevance from topics. Disabled topics are skipped.
 // Each keyword's effective weight = keyword.Weight * topic.Priority / 100.
@@ -39,6 +42,8 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 					result.HasAnchor = true
 				case "comparison":
 					result.HasComparison = true
+				case "tech":
+					result.TechScore += effective
 				}
 			}
 		}
@@ -49,12 +54,16 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 // ShouldPost applies the final policy gate:
 //  1. article must reach minScore
 //  2. if the feed requires an explicit Nintendo anchor, an anchor must be present
+//     unless the article has a very high technical signal score.
 func ShouldPost(title, body string, topics map[string]config.Topic, minScore int, requireAnchor bool) (Result, bool, string) {
 	result := Evaluate(title, body, topics)
 	if result.Score < minScore {
 		return result, false, "below_min_score"
 	}
 	if requireAnchor && !result.HasAnchor {
+		if result.TechScore >= strictFeedHighTechBypassScore {
+			return result, true, "accepted_via_high_tech"
+		}
 		return result, false, "missing_nintendo_anchor"
 	}
 	return result, true, "accepted"

@@ -134,15 +134,16 @@ func FetchRedditJSON(ctx context.Context, f config.Feed) ([]Item, error) {
 		}
 
 		items = append(items, Item{
-			Title:         post.Title,
-			Link:          link,
-			Description:   description,
-			ImageURL:      imgURL,
-			PublishedAt:   &t,
-			SourceName:    f.Name,
-			SourceType:    f.Type,
-			RequireAnchor: f.RequireAnchor,
-			ContentHash:   hashContent(post.Title + post.Permalink),
+			Title:          post.Title,
+			Link:           link,
+			Description:    description,
+			ImageURL:       imgURL,
+			PublishedAt:    &t,
+			SourceName:     f.Name,
+			SourcePriority: f.Priority,
+			SourceType:     f.Type,
+			RequireAnchor:  f.RequireAnchor,
+			ContentHash:    hashContent(post.Title + post.Permalink),
 		})
 	}
 	return items, nil

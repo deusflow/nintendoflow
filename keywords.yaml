@@ -38,9 +38,9 @@ topics:
         role: anchor
         weight: 12
 
-  hardware:
+  hardware_anchor:
     enabled: true
-    priority: 180
+    priority: 110
     keywords:
       - word: "switch 2"
         role: anchor
@@ -54,50 +54,106 @@ topics:
       - word: "joy con"
         role: anchor
         weight: 18
+
+  hardware_tech:
+    enabled: true
+    priority: 180
+    keywords:
       # Технічний потенціал і розкриття можливостей
       - word: "developer insight"
         role: tech
         weight: 75
+      - word: "developer insights"
+        role: tech
+        weight: 72
       - word: "dev reveals"
         role: tech
         weight: 80
+      - word: "developer reveals"
+        role: tech
+        weight: 80
+      - word: "dev says"
+        role: tech
+        weight: 70
+      - word: "developers say"
+        role: tech
+        weight: 68
       - word: "optimization breakthrough"
         role: tech
         weight: 85
+      - word: "optimization improvements"
+        role: tech
+        weight: 72
       - word: "portable mode"
         role: tech
         weight: 70
+      - word: "handheld mode"
+        role: tech
+        weight: 72
       - word: "handheld performance"
         role: tech
         weight: 75
+      - word: "portable performance"
+        role: tech
+        weight: 74
       - word: "undocked"
         role: tech
         weight: 70
+      - word: "docked and undocked"
+        role: tech
+        weight: 76
       - word: "pushing limits"
         role: tech
         weight: 80
+      - word: "push the limits"
+        role: tech
+        weight: 78
       - word: "technical potential"
         role: tech
         weight: 80
+      - word: "technical capabilities"
+        role: tech
+        weight: 82
       - word: "hidden capabilities"
         role: tech
         weight: 85
+      - word: "hidden power"
+        role: tech
+        weight: 78
       - word: "developers unlocking"
         role: tech
         weight: 85
+      - word: "unlocking more from the hardware"
+        role: tech
+        weight: 82
       - word: "squeeze more"
         role: tech
         weight: 75
+      - word: "squeezing more performance"
+        role: tech
+        weight: 80
       - word: "more power"
         role: tech
         weight: 65
+      - word: "more horsepower"
+        role: tech
+        weight: 70
       - word: "graphics upgrade"
         role: tech
         weight: 70
+      - word: "visual upgrade"
+        role: tech
+        weight: 68
       - word: "better than expected"
         role: tech
         weight: 75
+      - word: "stronger than expected"
+        role: tech
+        weight: 76
       - word: "surprised by hardware"
+        role: tech
+        weight: 80
+      - word: "surprised by the hardware"
         role: tech
         weight: 80
 

@@ -34,6 +34,7 @@ type Feed struct {
 	Type                 string `yaml:"type"`
 	RequireAnchor        bool   `yaml:"require_anchor"`
 	NeedsRedirectResolve bool   `yaml:"needs_redirect_resolve"`
+	TimeoutSeconds       int    `yaml:"timeout_seconds"`
 	// FetchMode controls the fetcher backend.
 	// Values: "" / "rss" (default RSS parser) | "reddit_json" (Reddit JSON API).
 	FetchMode string `yaml:"fetch_mode"`
@@ -108,6 +109,9 @@ func LoadFeeds(path string) ([]Feed, error) {
 		}
 		if strings.TrimSpace(f.URL) == "" || strings.TrimSpace(f.Name) == "" {
 			continue
+		}
+		if f.Priority == 0 {
+			f.Priority = 100
 		}
 		active = append(active, f)
 	}
