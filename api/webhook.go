@@ -18,6 +18,8 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const editSessionTTL = 30 * time.Minute
+
 func Handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -144,10 +146,15 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		}); err != nil {
 			return err
 		}
-		if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, telegram.BuildModerationEditWaitingText(article)); err != nil {
+		if err := telegram.EditModerationWaitingMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, article); err != nil {
 			return err
 		}
 		answerCallback(bot, cb.ID, "Send the replacement text")
+	case "cancel":
+		if err := cancelEditSession(ctx, database, bot, cb, articleID); err != nil {
+			return err
+		}
+		answerCallback(bot, cb.ID, "Edit cancelled")
 	default:
 		return fmt.Errorf("unsupported moderation action: %s", action)
 	}
@@ -202,6 +209,14 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 		return err
 	}
 
+	if editSessionExpired(session, time.Now()) {
+		slog.Info("moderation edit session expired", "article_id", session.ArticleID, "chat_id", session.ChatID, "user_id", session.UserID)
+		if err := expireEditSession(ctx, database, bot, message.Chat.ID, session); err != nil {
+			return err
+		}
+		return sendEditAck(bot, message.Chat.ID, message.MessageID, "Edit session expired ⏱️ Press Edit again if you still want to change the text.")
+	}
+
 	if article.Status == db.StatusPublished || article.Status == db.StatusRejected {
 		if err := db.DeleteModerationEditSession(ctx, database, session.ChatID, session.UserID); err != nil {
 			return err
@@ -229,6 +244,87 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	}
 
 	return sendEditAck(bot, message.Chat.ID, message.MessageID, "Updated ✅ Review the refreshed preview and press Publish or Reject.")
+}
+
+func cancelEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery, articleID int) error {
+	if cb == nil || cb.Message == nil || cb.From == nil {
+		return fmt.Errorf("cancel callback missing message or sender")
+	}
+
+	article, err := db.GetArticleByID(ctx, database, articleID)
+	if err != nil {
+		return err
+	}
+
+	session, err := db.GetModerationEditSession(ctx, database, cb.Message.Chat.ID, int64(cb.From.ID))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, cb.Message.MessageID, article, false)
+		}
+		return err
+	}
+
+	if session.ArticleID != articleID {
+		return sendEditAck(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Another article is currently in edit mode. Finish or cancel that one first.")
+	}
+
+	return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, session.PreviewMessageID, article, true)
+}
+
+func expireEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, chatID int64, session db.ModerationEditSession) error {
+	article, err := db.GetArticleByID(ctx, database, session.ArticleID)
+	if err != nil {
+		return err
+	}
+	if err := restoreArticlePreview(ctx, database, bot, chatID, session.PreviewMessageID, article, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func restoreArticlePreview(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article, deleteSession bool) error {
+	if deleteSession {
+		if err := db.DeleteModerationEditSessionsByArticle(ctx, database, article.ID); err != nil {
+			return err
+		}
+	}
+
+	if article.Status == db.StatusNeedsEdit {
+		if err := db.UpdateArticleStatus(ctx, database, article.ID, db.StatusPending); err != nil {
+			return err
+		}
+		article.Status = db.StatusPending
+	}
+
+	if article.Status == db.StatusPublished || article.Status == db.StatusRejected {
+		return telegram.EditModerationMessage(bot, chatID, messageID, finalModerationStateText(article.Status))
+	}
+
+	if err := telegram.EditModerationPreview(bot, chatID, messageID, article); err != nil {
+		previewChatID := strconv.FormatInt(chatID, 10)
+		if _, sendErr := telegram.SendModerationPreview(bot, previewChatID, article); sendErr != nil {
+			return fmt.Errorf("restore moderation preview: %w (fallback send error: %v)", err, sendErr)
+		}
+	}
+	return nil
+}
+
+func editSessionExpired(session db.ModerationEditSession, now time.Time) bool {
+	if session.UpdatedAt.IsZero() {
+		return false
+	}
+	return now.After(session.UpdatedAt.Add(editSessionTTL))
+}
+
+func finalModerationStateText(status string) string {
+	switch status {
+	case db.StatusPublished:
+		return "Published ✅"
+	case db.StatusRejected:
+		return "Rejected ❌"
+	default:
+		return "Moderation updated"
+	}
 }
 
 func publishPendingArticle(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, channelID string, articleID int) error {

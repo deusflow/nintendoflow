@@ -13,6 +13,7 @@ const (
 	moderationActionPublish = "publish"
 	moderationActionEdit    = "edit"
 	moderationActionReject  = "reject"
+	moderationActionCancel  = "cancel"
 )
 
 func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Article) (int, error) {
@@ -32,8 +33,20 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 }
 
 func EditModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string) error {
+	return editModerationMessage(bot, chatID, messageID, text, nil)
+}
+
+func EditModerationWaitingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
+	markup := moderationWaitingKeyboard(article.ID)
+	return editModerationMessage(bot, chatID, messageID, BuildModerationEditWaitingText(article), &markup)
+}
+
+func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string, markup *tgbotapi.InlineKeyboardMarkup) error {
 	edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
 	edit.ParseMode = "HTML"
+	if markup != nil {
+		edit.ReplyMarkup = markup
+	}
 	_, err := bot.Send(edit)
 	if err != nil {
 		return fmt.Errorf("telegram edit message: %w", err)
@@ -64,7 +77,7 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	}
 	action := parts[1]
 	switch action {
-	case moderationActionPublish, moderationActionEdit, moderationActionReject:
+	case moderationActionPublish, moderationActionEdit, moderationActionReject, moderationActionCancel:
 	default:
 		return "", 0, fmt.Errorf("unsupported callback action")
 	}
@@ -81,6 +94,14 @@ func moderationKeyboard(articleID int) tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("Publish", fmt.Sprintf("mod:%s:%d", moderationActionPublish, articleID)),
 			tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, articleID)),
 			tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, articleID)),
+		),
+	)
+}
+
+func moderationWaitingKeyboard(articleID int) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Cancel", fmt.Sprintf("mod:%s:%d", moderationActionCancel, articleID)),
 		),
 	)
 }
