@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deuswork/nintendoflow/internal/fetcher"
+	"github.com/deuswork/nintendoflow/pkg/fetcher"
 )
 
 func TestCandidateRankingScoreUsesFeedPriority(t *testing.T) {

@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/deuswork/nintendoflow/internal/config"
-	"github.com/deuswork/nintendoflow/internal/scorer"
+	"github.com/deuswork/nintendoflow/pkg/config"
+	"github.com/deuswork/nintendoflow/pkg/scorer"
 )
 
 func main() {

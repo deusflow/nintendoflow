@@ -3,13 +3,13 @@
     {
       "name": "gemini",
       "model": "gemini-2.5-flash",
-      "enabled": true,
+      "enabled": false,
       "api_key_env": "GEMINI_API_KEY"
     },
     {
       "name": "github_models",
       "model": "gpt-5",
-      "enabled": true,
+      "enabled": false,
       "api_key_env": "GH_MODELS_API_KEY"
     },
     {

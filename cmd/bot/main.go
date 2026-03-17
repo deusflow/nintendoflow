@@ -14,14 +14,14 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"github.com/deuswork/nintendoflow/internal/ai"
-	"github.com/deuswork/nintendoflow/internal/cleaner"
-	"github.com/deuswork/nintendoflow/internal/config"
-	"github.com/deuswork/nintendoflow/internal/db"
-	"github.com/deuswork/nintendoflow/internal/dedup"
-	"github.com/deuswork/nintendoflow/internal/fetcher"
-	"github.com/deuswork/nintendoflow/internal/scorer"
-	"github.com/deuswork/nintendoflow/internal/telegram"
+	"github.com/deuswork/nintendoflow/pkg/ai"
+	"github.com/deuswork/nintendoflow/pkg/cleaner"
+	"github.com/deuswork/nintendoflow/pkg/config"
+	"github.com/deuswork/nintendoflow/pkg/db"
+	"github.com/deuswork/nintendoflow/pkg/dedup"
+	"github.com/deuswork/nintendoflow/pkg/fetcher"
+	"github.com/deuswork/nintendoflow/pkg/scorer"
+	"github.com/deuswork/nintendoflow/pkg/telegram"
 )
 
 const (
@@ -268,7 +268,49 @@ func main() {
 		SourceName:  selected.item.SourceName,
 		SourceType:  selected.item.SourceType,
 		Score:       selected.score,
+		Status:      db.StatusPending,
 		PublishedAt: selected.item.PublishedAt,
+	}
+
+	if cfg.TestModerationMode {
+		articleID, err := db.InsertArticle(ctx, database, article)
+		if err != nil {
+			slog.Error("insert pending article failed", "error", err)
+			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+			return
+		}
+		article.ID = articleID
+
+		if err := db.UpdateBodyUA(ctx, database, article.ID, rewritten, rewriteProvider); err != nil {
+			slog.Warn("update body_ua failed", "error", err)
+		}
+
+		testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
+		if err != nil {
+			slog.Error("test telegram bot init failed", "error", err)
+			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+			return
+		}
+
+		previewChatID := cfg.TestAdminChatID
+		if strings.TrimSpace(previewChatID) == "" {
+			previewChatID = cfg.TestChannelID
+		}
+
+		previewMessageID, err := telegram.SendModerationPreview(testBot, previewChatID, article)
+		if err != nil {
+			slog.Error("send moderation preview failed", "error", err, "article_id", article.ID)
+			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+			return
+		}
+
+		slog.Info("test moderation preview sent",
+			"article_id", article.ID,
+			"preview_chat_id", previewChatID,
+			"preview_message_id", previewMessageID,
+		)
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+		return
 	}
 
 	if cfg.DryRun {

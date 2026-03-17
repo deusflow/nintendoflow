@@ -1,0 +1,83 @@
+﻿2026-03-16T07:32:01.7940462Z ##[group]Run actions/checkout@v6
+2026-03-16T07:32:01.7941359Z with:
+2026-03-16T07:32:01.7941907Z   repository: deusflow/nintendoflow
+2026-03-16T07:32:01.7942681Z   token: ***
+2026-03-16T07:32:01.7943141Z   ssh-strict: true
+2026-03-16T07:32:01.7943637Z   ssh-user: git
+2026-03-16T07:32:01.7944369Z   persist-credentials: true
+2026-03-16T07:32:01.7944957Z   clean: true
+2026-03-16T07:32:01.7945530Z   sparse-checkout-cone-mode: true
+2026-03-16T07:32:01.7946057Z   fetch-depth: 1
+2026-03-16T07:32:01.7946590Z   fetch-tags: false
+2026-03-16T07:32:01.7947064Z   show-progress: true
+2026-03-16T07:32:01.7947530Z   lfs: false
+2026-03-16T07:32:01.7948028Z   submodules: false
+2026-03-16T07:32:01.7948515Z   set-safe-directory: true
+2026-03-16T07:32:01.7949371Z ##[endgroup]
+2026-03-16T07:32:01.8861718Z Syncing repository: deusflow/nintendoflow
+2026-03-16T07:32:01.8863688Z ##[group]Getting Git version info
+2026-03-16T07:32:01.8864759Z Working directory is '/home/runner/work/nintendoflow/nintendoflow'
+2026-03-16T07:32:01.8866093Z [command]/usr/bin/git version
+2026-03-16T07:32:01.8884337Z git version 2.53.0
+2026-03-16T07:32:01.8905202Z ##[endgroup]
+2026-03-16T07:32:01.8919681Z Temporarily overriding HOME='/home/runner/work/_temp/fc4ce6c9-1857-4483-a547-bd1353f1f7ce' before making global git config changes
+2026-03-16T07:32:01.8922229Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-16T07:32:01.8925262Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/nintendoflow/nintendoflow
+2026-03-16T07:32:01.8959985Z Deleting the contents of '/home/runner/work/nintendoflow/nintendoflow'
+2026-03-16T07:32:01.8963535Z ##[group]Initializing the repository
+2026-03-16T07:32:01.8968315Z [command]/usr/bin/git init /home/runner/work/nintendoflow/nintendoflow
+2026-03-16T07:32:01.9036070Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-03-16T07:32:01.9037284Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-03-16T07:32:01.9038823Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-03-16T07:32:01.9040467Z hint: call:
+2026-03-16T07:32:01.9041334Z hint:
+2026-03-16T07:32:01.9042274Z hint: 	git config --global init.defaultBranch <name>
+2026-03-16T07:32:01.9043386Z hint:
+2026-03-16T07:32:01.9044662Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-03-16T07:32:01.9046395Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-03-16T07:32:01.9047728Z hint:
+2026-03-16T07:32:01.9048492Z hint: 	git branch -m <name>
+2026-03-16T07:32:01.9165458Z hint:
+2026-03-16T07:32:01.9166621Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-03-16T07:32:01.9168202Z Initialized empty Git repository in /home/runner/work/nintendoflow/nintendoflow/.git/
+2026-03-16T07:32:01.9170790Z [command]/usr/bin/git remote add origin https://github.com/deusflow/nintendoflow
+2026-03-16T07:32:01.9172713Z ##[endgroup]
+2026-03-16T07:32:01.9173440Z ##[group]Disabling automatic garbage collection
+2026-03-16T07:32:01.9174223Z [command]/usr/bin/git config --local gc.auto 0
+2026-03-16T07:32:01.9175884Z ##[endgroup]
+2026-03-16T07:32:01.9176506Z ##[group]Setting up auth
+2026-03-16T07:32:01.9176961Z Removing SSH command configuration
+2026-03-16T07:32:01.9177749Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-16T07:32:01.9180727Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-16T07:32:01.9402548Z Removing HTTP extra header
+2026-03-16T07:32:01.9408411Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-16T07:32:01.9433726Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-16T07:32:01.9601507Z Removing includeIf entries pointing to credentials config files
+2026-03-16T07:32:01.9607349Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-16T07:32:01.9635685Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-16T07:32:01.9808333Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-03-16T07:32:01.9838626Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git.path /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:32:01.9862863Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/nintendoflow/nintendoflow/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:32:01.9887587Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:32:01.9911919Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-f5c0b521-0d43-4f48-bd35-b03850794a32.config
+2026-03-16T07:32:01.9932079Z ##[endgroup]
+2026-03-16T07:32:01.9933221Z ##[group]Fetching the repository
+2026-03-16T07:32:01.9941725Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +6dfceb9eead34615bc6425828d4ad1977a7fe763:refs/remotes/origin/main
+2026-03-16T07:32:02.2855889Z From https://github.com/deusflow/nintendoflow
+2026-03-16T07:32:02.2857840Z  * [new ref]         6dfceb9eead34615bc6425828d4ad1977a7fe763 -> origin/main
+2026-03-16T07:32:02.2887307Z [command]/usr/bin/git branch --list --remote origin/main
+2026-03-16T07:32:02.2914128Z   origin/main
+2026-03-16T07:32:02.2922421Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-03-16T07:32:02.2945174Z 6dfceb9eead34615bc6425828d4ad1977a7fe763
+2026-03-16T07:32:02.2949385Z ##[endgroup]
+2026-03-16T07:32:02.2951303Z ##[group]Determining the checkout info
+2026-03-16T07:32:02.2953482Z ##[endgroup]
+2026-03-16T07:32:02.2955121Z [command]/usr/bin/git sparse-checkout disable
+2026-03-16T07:32:02.3005309Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-03-16T07:32:02.3027851Z ##[group]Checking out the ref
+2026-03-16T07:32:02.3030410Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-03-16T07:32:02.3081042Z Switched to a new branch 'main'
+2026-03-16T07:32:02.3083126Z branch 'main' set up to track 'origin/main'.
+2026-03-16T07:32:02.3086936Z ##[endgroup]
+2026-03-16T07:32:02.3115967Z [command]/usr/bin/git log -1 --format=%H
+2026-03-16T07:32:02.3136441Z 6dfceb9eead34615bc6425828d4ad1977a7fe763
