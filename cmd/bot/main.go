@@ -147,6 +147,14 @@ func main() {
 		slog.Warn("fetch recent title hashes failed", "error", err)
 		knownTitles = make(map[string]struct{})
 	}
+	recentDedupTexts, err := db.FetchRecentDedupTexts(ctx, database, cfg.RecentTitlesHours)
+	if err != nil {
+		slog.Warn("fetch recent dedup texts failed", "error", err)
+		recentDedupTexts = nil
+	}
+	for i := range recentDedupTexts {
+		recentDedupTexts[i] = dedup.FingerprintText(recentDedupTexts[i])
+	}
 
 	for _, item := range items {
 		if item.PublishedAt == nil || item.PublishedAt.Before(cutoff) {
@@ -161,6 +169,15 @@ func main() {
 		}
 		if _, exists := knownTitles[titleHash]; exists {
 			continue
+		}
+
+		candidateText := dedup.BuildSimilarityText(item.Title, item.Description)
+		if candidateText != "" {
+			threshold := dedup.ThresholdForSourceType(item.SourceType)
+			if dedup.IsNearDuplicate(candidateText, recentDedupTexts, threshold) {
+				slog.Debug("candidate filtered out", "reason", "near_duplicate", "source_type", item.SourceType, "title", item.Title)
+				continue
+			}
 		}
 
 		// Score + Nintendo relevance gate
@@ -179,6 +196,9 @@ func main() {
 		})
 		knownURLs[urlHash] = struct{}{}
 		knownTitles[titleHash] = struct{}{}
+		if candidateText != "" {
+			recentDedupTexts = append(recentDedupTexts, candidateText)
+		}
 	}
 	filteredCount = len(candidates)
 	logStage("local_filter", stageStart, runStart)

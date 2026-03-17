@@ -224,6 +224,35 @@ func FetchRecentTitleHashes(ctx context.Context, db *sql.DB, hours int) (map[str
 	return result, nil
 }
 
+// FetchRecentDedupTexts returns combined title/body texts for near-duplicate checks.
+// Only pending/published rows are considered to avoid using rejected noise.
+func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT title_raw, COALESCE(body_ua, '')
+		FROM articles
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
+		  AND status IN ($2, $3)
+		ORDER BY created_at DESC
+		LIMIT 500`, hours, StatusPending, StatusPublished)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]string, 0, 128)
+	for rows.Next() {
+		var titleRaw, bodyUA string
+		if err := rows.Scan(&titleRaw, &bodyUA); err != nil {
+			return nil, err
+		}
+		result = append(result, titleRaw+"\n"+bodyUA)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // UpdateBodyUA sets body_ua and ai_provider after rewrite.
 func UpdateBodyUA(ctx context.Context, db *sql.DB, id int, bodyUA, aiProvider string) error {
 	_, err := db.ExecContext(ctx, `
