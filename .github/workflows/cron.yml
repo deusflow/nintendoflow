@@ -29,8 +29,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          TEST_MODERATION_MODE: "true"
+          # Секреты для режима модерации (берем реальные ключи)
+          TEST_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TEST_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TEST_ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+          TEST_MODERATION_MODE: "true"
+          # ИИ
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
