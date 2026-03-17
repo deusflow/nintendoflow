@@ -29,10 +29,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          # Секреты для режима модерации (берем реальные ключи)
+          # Подключаем режим модерации, используя твои реальные ключи
           TEST_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TEST_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          TEST_ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+          # Вот тут была ошибка! Теперь имя секрета совпадает на 100%
+          TEST_ADMIN_CHAT_ID: ${{ secrets.TEST_ADMIN_CHAT_ID }}
           TEST_MODERATION_MODE: "true"
           # ИИ
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
