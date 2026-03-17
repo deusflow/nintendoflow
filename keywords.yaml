@@ -57,7 +57,7 @@ topics:
 
   hardware_tech:
     enabled: true
-    priority: 180
+    priority: 100
     keywords:
       # Технічний потенціал і розкриття можливостей
       - word: "developer insight"
@@ -159,7 +159,7 @@ topics:
 
   franchises:
     enabled: true
-    priority: 90
+    priority: 120
     keywords:
       - word: "mario"
         role: anchor
@@ -188,7 +188,7 @@ topics:
 
   events:
     enabled: true
-    priority: 100
+    priority: 130
     keywords:
       - word: "nintendo direct"
         role: anchor
@@ -222,7 +222,7 @@ topics:
 
   monetization:
     enabled: true
-    priority: 90
+    priority: 120
     keywords:
       - word: "free-to-play"
         role: signal
