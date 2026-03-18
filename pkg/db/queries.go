@@ -73,7 +73,7 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
-		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
@@ -338,7 +338,7 @@ func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) (
 	}
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
@@ -397,7 +397,7 @@ func CountPublishedArticles(ctx context.Context, db *sql.DB) (int, error) {
 func GetPublishedArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
-		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles

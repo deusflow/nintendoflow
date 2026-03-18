@@ -159,7 +159,7 @@ func fetchArticleStatusStats(ctx context.Context, database *sql.DB) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("query status stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	stats := map[string]int{
 		db.StatusPending:   0,
