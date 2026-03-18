@@ -165,23 +165,64 @@
         <div class="logo-txt">DEUS<span>⚡</span>FLOW</div>
     </div>
     <div class="nav-r">
-        <div class="live-w"><div class="lr"><div class="ld"></div></div><span id="db-status">LOADING...</span></div>
+        <div class="live-w"><div class="lr"><div class="ld"></div></div><span id="db-status">DATABASE: ONLINE</span></div>
     </div>
 </nav>
 
 <div class="hero" id="hero">
     <div class="p-layer" id="p-bg">
         <svg viewBox="0 0 240 280" fill="none" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <!-- Speed lines -->
             <g opacity="0.3">
                 <line x1="120" y1="140" x2="0" y2="0" stroke="var(--hyper-pink)" stroke-width=".8"/>
                 <line x1="120" y1="140" x2="240" y2="0" stroke="var(--hyper-pink)" stroke-width=".8"/>
                 <line x1="120" y1="140" x2="0" y2="280" stroke="var(--hyper-pink)" stroke-width=".8"/>
                 <line x1="120" y1="140" x2="240" y2="280" stroke="var(--hyper-pink)" stroke-width=".8"/>
+                <line x1="120" y1="140" x2="60" y2="0" stroke="var(--hyper-pink)" stroke-width=".5"/>
+                <line x1="120" y1="140" x2="180" y2="0" stroke="var(--hyper-pink)" stroke-width=".5"/>
             </g>
+            <!-- Console Body -->
             <rect x="45" y="70" width="150" height="100" rx="16" fill="#150a1f" stroke="var(--hyper-pink)" stroke-width="1.5"/>
             <rect x="77" y="82" width="86" height="76" rx="6" fill="#080014"/>
             <rect x="82" y="88" width="76" height="4" rx="2" fill="var(--hyper-pink)"/>
+            <rect x="82" y="96" width="60" height="2" rx="1" fill="rgba(255,255,255,0.3)"/>
+            <rect x="82" y="101" width="48" height="2" rx="1" fill="rgba(255,255,255,0.2)"/>
+            <rect x="82" y="110" width="76" height="30" rx="4" fill="rgba(255,46,143,0.05)" stroke="var(--milky-blush)" stroke-width=".5"/>
+            <rect x="86" y="114" width="28" height="22" rx="2" fill="rgba(255,46,143,0.3)"/>
+            <rect x="118" y="116" width="36" height="2.5" rx="1" fill="rgba(255,255,255,0.3)"/>
+            <rect x="118" y="122" width="28" height="2" rx="1" fill="rgba(255,255,255,0.2)"/>
             <rect x="86" y="140" width="30" height="7" rx="2" fill="var(--hyper-pink)"/>
+
+            <!-- Left Joy-con -->
+            <rect x="22" y="78" width="25" height="84" rx="12" fill="#120515" stroke="var(--hyper-pink)" stroke-width="1"/>
+            <circle cx="31" cy="96" r="7" fill="#080014" stroke="rgba(255,46,143,0.5)"/>
+            <circle cx="31" cy="96" r="2.5" fill="var(--milky-blush)"/>
+            <circle cx="35" cy="120" r="3.5" fill="#080014" stroke="var(--milky-blush)" stroke-width=".5"/>
+            <circle cx="31" cy="127" r="3.5" fill="#080014" stroke="var(--milky-blush)" stroke-width=".5"/>
+            <circle cx="27" cy="120" r="3.5" fill="#080014" stroke="var(--milky-blush)" stroke-width=".5"/>
+
+            <!-- Right Joy-con -->
+            <rect x="193" y="78" width="25" height="84" rx="12" fill="#1a0515" stroke="var(--hyper-pink)" stroke-width="1.5"/>
+            <circle cx="207" cy="96" r="7" fill="#080014" stroke="rgba(255,46,143,0.5)"/>
+            <circle cx="207" cy="96" r="2.5" fill="var(--hyper-pink)"/>
+            <circle cx="211" cy="116" r="4" fill="var(--hyper-pink)"/>
+            <circle cx="207" cy="123" r="3.5" fill="rgba(255,46,143,0.2)" stroke="var(--hyper-pink)" stroke-width=".5"/>
+            <circle cx="203" cy="116" r="3.5" fill="rgba(255,46,143,0.2)" stroke="var(--hyper-pink)" stroke-width=".5"/>
+            <circle cx="207" cy="109" r="3.5" fill="rgba(255,46,143,0.2)" stroke="var(--hyper-pink)" stroke-width=".5"/>
+
+            <!-- Cursed / Cyber Lines -->
+            <path d="M45 100 Q20 80 10 58" stroke="var(--milky-blush)" stroke-width="1.5" fill="none" stroke-dasharray="2,4"/>
+            <path d="M195 90 Q218 70 226 48" stroke="var(--hyper-pink)" stroke-width="1.5" fill="none" stroke-dasharray="2,4"/>
+
+            <!-- Kanji -->
+            <text x="16" y="54" font-family="Noto Serif JP,serif" font-size="10" font-weight="900" fill="var(--milky-blush)">呪</text>
+            <text x="210" y="44" font-family="Noto Serif JP,serif" font-size="10" font-weight="900" fill="var(--hyper-pink)">術</text>
+
+            <!-- Pulse Frame -->
+            <rect x="18" y="65" width="204" height="112" rx="18" stroke="var(--hyper-pink)" stroke-width="1" fill="none">
+                <animate attributeName="opacity" values="0;0.8;0" dur="2s" repeatCount="indefinite"/>
+                <animate attributeName="stroke-width" values="1;3;1" dur="2s" repeatCount="indefinite"/>
+            </rect>
         </svg>
     </div>
 
@@ -189,11 +230,11 @@
         DEUS<b>⚡</b>FLOW
         <span id="p-subtitle">NEO-NINTENDO NEWS NETWORK</span>
     </div>
-
+    <!-- Передний слой: Glass Card (Новость) -->
     <div class="p-layer glass-card" id="p-front">
-        <div class="hn-badge" id="hero-badge">LATEST</div>
-        <div class="hn-title" id="hero-title">Loading...</div>
-        <div class="hn-desc" id="hero-desc">Gathering news from the database...</div>
+        <div class="hn-badge" id="hero-badge">NEW FROM BOT</div>
+        <div class="hn-title" id="hero-title">ELDEN RING: SWITCH 2 PERFORMANCE LEAK</div>
+        <div class="hn-desc" id="hero-desc">FromSoftware адаптировали движок. Стабильные 30 FPS при нативном 1080p в портативе. Это начало новой эры.</div>
         <button class="btn-read" id="hero-btn" style="cursor: pointer;">READ ARTICLE</button>
     </div>
 </div>
@@ -262,7 +303,7 @@
             const response = await fetch('./data.json');
             if (!response.ok) throw new Error('Failed to load data');
             const data = await response.json();
-            document.getElementById('db-status').textContent = `${data.articles.length} ARTICLES`;
+            document.getElementById('db-status').textContent = data.articles.length + ' ARTICLES';
             renderHero(data.articles[0]);
             renderCarousel(data.articles.slice(1, 10));
         } catch (err) {

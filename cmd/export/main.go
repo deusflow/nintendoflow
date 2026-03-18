@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -42,12 +43,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	database, err := db.Connect(dsn)
+	slog.Info("export: connecting to database")
+	var database *sql.DB
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		database, err = db.Connect(dsn)
+		if err == nil {
+			slog.Info("export: database connected", "attempt", attempt)
+			break
+		}
+		slog.Warn("export: connection attempt failed", "attempt", attempt, "error", err)
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt*2) * time.Second)
+		}
+	}
 	if err != nil {
-		slog.Error("db connect failed", "error", err)
+		slog.Error("export: db connect failed after 3 attempts", "error", err)
 		os.Exit(1)
 	}
 	defer func() { _ = database.Close() }()
+	slog.Info("export: database ready")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -108,4 +123,9 @@ func main() {
 	}
 
 	slog.Info("export complete", "path", outPath, "articles", len(allArticles))
+	if len(allArticles) > 0 {
+		slog.Info("exported articles preview", "total", len(allArticles), "first_id", allArticles[0].ID, "first_title", allArticles[0].TitleUA)
+	} else {
+		slog.Info("exported articles preview", "total", 0, "warning", "no published articles found")
+	}
 }
