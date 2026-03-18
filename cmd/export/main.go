@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
@@ -43,6 +45,9 @@ func main() {
 		slog.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
+
+	host, dbName := parseDSNInfo(dsn)
+	slog.Info("export: target database", "host", host, "database", dbName)
 
 	slog.Info("export: connecting to database")
 	var database *sql.DB
@@ -174,4 +179,20 @@ func fetchArticleStatusStats(ctx context.Context, database *sql.DB) (map[string]
 		return nil, fmt.Errorf("iterate status stats: %w", err)
 	}
 	return stats, nil
+}
+
+func parseDSNInfo(dsn string) (host, dbName string) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "unknown", "unknown"
+	}
+	host = u.Hostname()
+	dbName = strings.TrimPrefix(u.Path, "/")
+	if host == "" {
+		host = "unknown"
+	}
+	if dbName == "" {
+		dbName = "unknown"
+	}
+	return host, dbName
 }
