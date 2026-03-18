@@ -303,9 +303,16 @@
             const response = await fetch('./data.json');
             if (!response.ok) throw new Error('Failed to load data');
             const data = await response.json();
-            document.getElementById('db-status').textContent = data.articles.length + ' ARTICLES';
-            renderHero(data.articles[0]);
-            renderCarousel(data.articles.slice(1, 10));
+            const articles = Array.isArray(data.articles) ? data.articles : [];
+            document.getElementById('db-status').textContent = articles.length + ' ARTICLES';
+
+            if (articles.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            renderHero(articles[0]);
+            renderCarousel(articles.slice(1, 10));
         } catch (err) {
             console.error('Data load error:', err);
             document.getElementById('db-status').textContent = 'OFFLINE';
@@ -338,11 +345,20 @@
                     <div class="c-title">${a.title_ua || a.title_raw}</div>
                     <div class="c-foot">
                         <span class="c-src">${a.source_name || 'SRC'}</span>
-                        <span class="c-score">⭐ ${a.score || 0}</span>
+                        <span class="c-cmt">💬 ${a.score || 0}</span>
                     </div>
                 </div>
             </a>
         `).join('');
+    }
+
+    function showEmptyState() {
+        document.getElementById('hero-title').textContent = 'NO PUBLISHED ARTICLES YET';
+        document.getElementById('hero-desc').textContent = 'База читається, але в таблиці articles немає рядків зі статусом published.';
+        document.getElementById('hero-btn').onclick = () => {
+            window.location.href = '#';
+        };
+        document.getElementById('carousel').innerHTML = '<div class="error">No published articles. Publish at least one row in DB.</div>';
     }
 
     // Load on ready

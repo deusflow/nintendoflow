@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -67,6 +68,21 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	stats, err := fetchArticleStatusStats(ctx, database)
+	if err != nil {
+		slog.Error("export: failed to read article status stats", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("export: article status stats",
+		"published", stats[db.StatusPublished],
+		"pending", stats[db.StatusPending],
+		"needs_edit", stats[db.StatusNeedsEdit],
+		"rejected", stats[db.StatusRejected],
+	)
+	if stats[db.StatusPublished] == 0 {
+		slog.Warn("export: no published rows found; data.json will be empty")
+	}
+
 	// Fetch all published articles
 	const pageSize = 1000
 	var allArticles []ExportArticle
@@ -128,4 +144,34 @@ func main() {
 	} else {
 		slog.Info("exported articles preview", "total", 0, "warning", "no published articles found")
 	}
+}
+
+func fetchArticleStatusStats(ctx context.Context, database *sql.DB) (map[string]int, error) {
+	rows, err := database.QueryContext(ctx, `
+		SELECT status, COUNT(*)
+		FROM articles
+		GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("query status stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := map[string]int{
+		db.StatusPending:   0,
+		db.StatusPublished: 0,
+		db.StatusNeedsEdit: 0,
+		db.StatusRejected:  0,
+	}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan status stats: %w", err)
+		}
+		stats[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate status stats: %w", err)
+	}
+	return stats, nil
 }

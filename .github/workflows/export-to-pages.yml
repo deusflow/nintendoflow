@@ -7,20 +7,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: export-pages
   cancel-in-progress: false
 
 jobs:
-  export:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - uses: actions/setup-go@v4
         with:
@@ -45,16 +48,29 @@ jobs:
             exit 1
           fi
 
-      - name: Commit and push data.json
+      - name: Validate exported content
         run: |
-          git config --global user.name "DEUSFLOW Bot"
-          git config --global user.email "bot@deusflow.local"
-          git pull --rebase origin "${{ github.ref_name }}"
-          git add docs/data.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
+          count=$(jq '.articles | length' docs/data.json)
+          echo "exported_articles_count=${count}"
+          if [ "${count}" -eq 0 ]; then
+            echo "::warning::Export completed but contains 0 published articles. Check DB statuses (status='published')."
           else
-            git commit -m "docs: update articles export $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-            git push origin HEAD:${{ github.ref_name }}
+            jq '.articles[0] | {id, title_ua, source_name, status}' docs/data.json
           fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 

@@ -95,18 +95,21 @@ Then open: `http://localhost:8080`
 
 1. Push to GitHub (main branch)
 2. Go to **Settings** → **Pages**
-3. Set source to `/docs` folder
-4. GitHub Pages will auto-deploy
+3. Set source to **GitHub Actions**
+4. Run workflow `.github/workflows/export-to-pages.yml` (or wait for schedule)
 
 **Automatic Article Export:**
 
-Workflow `.github/workflows/export-to-pages.yml` runs every 3 hours:
+Workflow `.github/workflows/export-to-pages.yml` runs every 4 hours (6 times/day):
 - Connects to PostgreSQL (DATABASE_URL secret)
 - Exports all published articles to `docs/data.json`
-- Commits and re-deploys site
+- Deploys `docs/` as Pages artifact via official `actions/deploy-pages`
 
 Configure GitHub Actions secrets:
 - `DATABASE_URL` — PostgreSQL connection string
+
+Data requirement:
+- only rows with `articles.status='published'` are exported to the site.
 
 ## AI router config
 
@@ -128,7 +131,7 @@ API keys are read only from environment variables named in `api_key_env`.
 
 ## Як змінити стиль
 
-Відредагуй `internal/ai/prompt.go` — константу `styleGuide`.  
+Відредагуй `pkg/ai/prompt.go` — константу `styleGuide`.  
 Всі AI провайдери автоматично підхоплять зміни.
 
 ## Ліміти AI

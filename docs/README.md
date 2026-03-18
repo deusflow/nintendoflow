@@ -18,9 +18,8 @@ Web archive for DEUSFLOW — a static GitHub Pages site that displays all publis
 
 1. Go to your repository settings
 2. Navigate to **Settings** → **Pages**
-3. Set **Source** to: `Deploy from a branch`
-4. Select branch: `main` (or your working branch)
-5. Select folder: `/docs`
+3. Set **Source** to: `GitHub Actions`
+4. Save
 6. Save
 
 GitHub will auto-deploy within 1-2 minutes.
@@ -30,17 +29,21 @@ GitHub will auto-deploy within 1-2 minutes.
 1. In **Settings** → **Pages** → **Custom domain**, enter your domain (e.g., `archive.deusflow.local`)
 2. Update DNS CNAME record pointing to `your-username.github.io`
 
-### Step 3: Automatic Article Export (Optional)
+### Step 3: Automatic Article Export
 
 The workflow `.github/workflows/export-to-pages.yml` automatically:
-- Exports published articles from PostgreSQL every 3 hours
-- Generates `docs/data.json` with all articles
-- Commits changes back to the repository
-- Deploys to GitHub Pages
+- Exports published articles from PostgreSQL every 4 hours (6 runs/day)
+- Generates `docs/data.json` inside the workflow workspace
+- Deploys to GitHub Pages using official artifact deployment
 
 **Requirements:**
 - Add `DATABASE_URL` secret in repository settings
-- Workflow has write permissions (enabled by default)
+- Keep at least one row in `articles` with `status='published'`
+
+Run manually at any time:
+1. Open **Actions** tab
+2. Select **Export Articles to GitHub Pages**
+3. Click **Run workflow**
 
 ## 📁 File Structure
 
@@ -101,23 +104,19 @@ Edit `:root` variables in `index.html`:
 
 ### Add Custom Domain
 
-Update line in `.github/workflows/export-to-pages.yml`:
-
-```yaml
-cname: your-archive.example.com
-```
+Set custom domain in **Settings -> Pages -> Custom domain**.
 
 ## 🚨 Troubleshooting
 
 **Articles not showing?**
-- Check if `data.json` exists in `/docs/`
-- Verify browser console for fetch errors
-- Ensure `DATABASE_URL` secret is configured for export workflow
+- Check the latest run of `.github/workflows/export-to-pages.yml`
+- Verify logs show `export: article status stats` and `published > 0`
+- Ensure `DATABASE_URL` secret is configured and valid
 
 **Page not live?**
 - GitHub Pages deployment takes 1-2 minutes
 - Check "Actions" tab for workflow status
-- Verify branch and folder settings in Pages config
+- Verify Pages source is set to `GitHub Actions`
 
 **Images not loading?**
 - Check image URLs in `data.json`

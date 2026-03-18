@@ -26,7 +26,7 @@ Workflow запустится по расписанию:
 3. Найдите workflow **"Export Articles to GitHub Pages"**
 4. Нажмите **"Run workflow"** → **Run workflow** (green button)
 5. Дождитесь завершения (~2-3 минуты)
-6. Проверьте что `docs/data.json` обновился в main ветке
+6. Проверьте deployment в окружении `github-pages`
 
 ---
 
@@ -46,13 +46,10 @@ go run ./cmd/export/main.go
 # Проверьте что файл обновился
 cat docs/data.json | head -30
 
-# Коммитьте и пушьте
-git add docs/data.json
-git commit -m "docs: populate articles from production database"
-git push origin main
+# Коммит не обязателен для Pages: workflow публикует artifact напрямую.
 ```
 
-GitHub Pages автоматически переразворачивает при каждом push в `/docs/`.
+GitHub Pages автоматически обновится после успешного шага `Deploy to GitHub Pages`.
 
 ---
 
@@ -160,7 +157,7 @@ GitHub Actions → Export Articles to GitHub Pages → Run workflow
 - [ ] Таблица `articles` существует в БД
 - [ ] Есть хотя бы одна статья со `status='published'`
 - [ ] `/docs/` папка залита в репо
-- [ ] GitHub Pages Settings → Source: `/docs` folder
+- [ ] GitHub Pages Settings → Source: `GitHub Actions`
 
 ### **Логи для диагностики**
 
@@ -184,9 +181,9 @@ GitHub Actions → Export Articles to GitHub Pages → Run workflow
    ↓
 5. Пишет в docs/data.json
    ↓
-6. Коммитит и пушит в main ветку
+6. Пакует `docs/` в Pages artifact
    ↓
-7. GitHub Pages автоматически переразворачивает
+7. Деплоит artifact через `actions/deploy-pages`
    ↓
 8. index.html и article.html загружают данные из data.json
    ↓
