@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="DEUSFLOW - Neo-Nintendo News Network. Архів найцікавіших новин про Nintendo з AI-обробкою." />
     <meta name="theme-color" content="#080014" />
-    <title>DEUSFLOW - Nintendo News Archive</title>
+    <title>DEUSFLOW - Nintendo Українця</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Bebas+Neue&family=Rajdhani:wght@500;600;700&family=Noto+Serif+JP:wght@900&display=swap');
 
@@ -228,7 +228,7 @@
 
     <div class="p-layer" id="p-title">
         DEUS<b>⚡</b>FLOW
-        <span id="p-subtitle">NEO-NINTENDO NEWS NETWORK</span>
+        <span id="p-subtitle">Інсайди, ігри та трохи болю від цін...</span>
     </div>
     <!-- Передний слой: Glass Card (Новость) -->
     <div class="p-layer glass-card" id="p-front">
@@ -353,8 +353,9 @@
 
     function renderHero(article) {
         if (!article) return;
-        document.getElementById('hero-title').textContent = article.title_ua || article.title_raw;
-        document.getElementById('hero-desc').textContent = (article.body_ua || article.description || '').substring(0, 120) + '...';
+        document.getElementById('hero-title').textContent = stripHtml(article.title_ua || article.title_raw || '');
+        const cleanDesc = stripHtml(article.body_ua || article.description || '');
+        document.getElementById('hero-desc').textContent = cleanDesc.substring(0, 120) + '...';
         document.getElementById('hero-btn').onclick = () => {
             window.location.href = `./article.html?id=${article.id}`;
         };
@@ -369,18 +370,32 @@
         carousel.innerHTML = articles.map(a => `
             <a href="./article.html?id=${a.id}" class="c-card">
                 <div class="c-thumb">
-                    <img src="${a.image_url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22340%22 height=%22180%22%3E%3Crect fill=%22%23150a1f%22 width=%22340%22 height=%22180%22/%3E%3C/svg%3E'}" alt="${a.title_ua || a.title_raw}" loading="lazy"/>
-                    <div class="c-tag">${a.source_name || 'NEWS'}</div>
+                    <img src="${escapeHtml(a.image_url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22340%22 height=%22180%22%3E%3Crect fill=%22%23150a1f%22 width=%22340%22 height=%22180%22/%3E%3C/svg%3E')}" alt="${escapeHtml(stripHtml(a.title_ua || a.title_raw || ''))}" loading="lazy"/>
+                    <div class="c-tag">${escapeHtml(a.source_name || 'NEWS')}</div>
                 </div>
                 <div class="c-body">
-                    <div class="c-title">${a.title_ua || a.title_raw}</div>
+                    <div class="c-title">${escapeHtml(stripHtml(a.title_ua || a.title_raw || ''))}</div>
                     <div class="c-foot">
-                        <span class="c-src">${a.source_name || 'SRC'}</span>
+                        <span class="c-src">${escapeHtml(a.source_name || 'SRC')}</span>
                         <span class="c-cmt">💬 ${a.score || 0}</span>
                     </div>
                 </div>
             </a>
         `).join('');
+    }
+
+    function stripHtml(input) {
+        const txt = String(input || '');
+        const div = document.createElement('div');
+        div.innerHTML = txt;
+        return (div.textContent || '').trim();
+    }
+
+    function escapeHtml(input) {
+        const txt = String(input || '');
+        const div = document.createElement('div');
+        div.textContent = txt;
+        return div.innerHTML;
     }
 
     function showEmptyState(exportedAt) {

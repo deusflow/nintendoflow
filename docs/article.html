@@ -191,10 +191,10 @@
                 </div>
 
                 <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" class="article-img" loading="lazy"/>
-                <div class="article-body">${escapeHtml(body)}</div>
+                <div class="article-body">${sanitizeLimitedHTML(body)}</div>
 
                 <div class="article-footer">
-                    <a href="${escapeHtml(article.source_url)}" target="_blank" rel="noopener noreferrer" class="btn">Read Original</a>
+                    <a href="${safeURL(article.source_url)}" target="_blank" rel="noopener noreferrer" class="btn">Read Original</a>
                 </div>
             `;
         } catch (err) {
@@ -207,6 +207,62 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    function sanitizeLimitedHTML(input) {
+        const html = String(input || '');
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+
+        const allowed = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'BR', 'P', 'UL', 'OL', 'LI', 'A']);
+        const nodes = [];
+        const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_ELEMENT);
+        while (walker.nextNode()) {
+            nodes.push(walker.currentNode);
+        }
+
+        for (const el of nodes) {
+            if (!allowed.has(el.tagName)) {
+                const txt = document.createTextNode(el.textContent || '');
+                el.replaceWith(txt);
+                continue;
+            }
+
+            if (el.tagName === 'A') {
+                const href = el.getAttribute('href') || '';
+                if (!isSafeHref(href)) {
+                    const txt = document.createTextNode(el.textContent || '');
+                    el.replaceWith(txt);
+                    continue;
+                }
+                el.setAttribute('href', href);
+                el.setAttribute('target', '_blank');
+                el.setAttribute('rel', 'noopener noreferrer');
+            }
+
+            for (const attr of Array.from(el.attributes)) {
+                if (el.tagName === 'A' && attr.name === 'href') continue;
+                el.removeAttribute(attr.name);
+            }
+        }
+
+        return tpl.innerHTML;
+    }
+
+    function isSafeHref(href) {
+        try {
+            const u = new URL(href, window.location.origin);
+            return ['http:', 'https:', 'mailto:'].includes(u.protocol);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function safeURL(url) {
+        if (!isSafeHref(url || '')) {
+            return '#';
+        }
+        return url;
     }
 
     if (document.readyState === 'loading') {
