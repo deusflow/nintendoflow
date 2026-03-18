@@ -105,6 +105,34 @@
 </div>
 
 <script>
+    async function fetchArchiveData() {
+        const stamp = Date.now();
+        const candidates = [
+            `./data.json?v=${stamp}`,
+            `data.json?v=${stamp}`,
+            `/nintendoflow/data.json?v=${stamp}`,
+            `/data.json?v=${stamp}`
+        ];
+
+        let lastError = null;
+        for (const url of candidates) {
+            try {
+                const response = await fetch(url, {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status} for ${url}`);
+                }
+                const json = await response.json();
+                return { data: json, source: url };
+            } catch (err) {
+                lastError = err;
+            }
+        }
+        throw lastError || new Error('Failed to load archive data from all candidates');
+    }
+
     async function loadArticle() {
         const params = new URLSearchParams(window.location.search);
         const id = params.get('id');
@@ -115,11 +143,14 @@
         }
 
         try {
-            const response = await fetch('./data.json');
-            if (!response.ok) throw new Error('Failed to load data');
-            const data = await response.json();
+            const { data, source } = await fetchArchiveData();
+            console.info('article data loaded', {
+                source,
+                exported_at: data.exported_at || null,
+                count: Array.isArray(data.articles) ? data.articles.length : 0
+            });
 
-            const article = data.articles.find(a => a.id == id);
+            const article = (Array.isArray(data.articles) ? data.articles : []).find(a => a.id == id);
             if (!article) {
                 document.getElementById('content').innerHTML = '<div class="error">Article not found.</div>';
                 return;

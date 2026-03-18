@@ -298,16 +298,47 @@
     });
 
     // ===== Data Loader =====
+    async function fetchArchiveData() {
+        const stamp = Date.now();
+        const candidates = [
+            `./data.json?v=${stamp}`,
+            `data.json?v=${stamp}`,
+            `/nintendoflow/data.json?v=${stamp}`,
+            `/data.json?v=${stamp}`
+        ];
+
+        let lastError = null;
+        for (const url of candidates) {
+            try {
+                const response = await fetch(url, {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status} for ${url}`);
+                }
+                const json = await response.json();
+                return { data: json, source: url };
+            } catch (err) {
+                lastError = err;
+            }
+        }
+        throw lastError || new Error('Failed to load archive data from all candidates');
+    }
+
     async function loadData() {
         try {
-            const response = await fetch('./data.json');
-            if (!response.ok) throw new Error('Failed to load data');
-            const data = await response.json();
+            const { data, source } = await fetchArchiveData();
             const articles = Array.isArray(data.articles) ? data.articles : [];
             document.getElementById('db-status').textContent = articles.length + ' ARTICLES';
+            console.info('archive data loaded', {
+                source,
+                exported_at: data.exported_at || null,
+                count: articles.length
+            });
 
             if (articles.length === 0) {
-                showEmptyState();
+                showEmptyState(data.exported_at || null);
                 return;
             }
 
@@ -352,9 +383,13 @@
         `).join('');
     }
 
-    function showEmptyState() {
+    function showEmptyState(exportedAt) {
         document.getElementById('hero-title').textContent = 'NO PUBLISHED ARTICLES YET';
-        document.getElementById('hero-desc').textContent = 'База читається, але в таблиці articles немає рядків зі статусом published.';
+        if (exportedAt) {
+            document.getElementById('hero-desc').textContent = `Експорт виконано: ${exportedAt}, але масив articles порожній.`;
+        } else {
+            document.getElementById('hero-desc').textContent = 'База читається, але в таблиці articles немає рядків зі статусом published.';
+        }
         document.getElementById('hero-btn').onclick = () => {
             window.location.href = '#';
         };
