@@ -52,11 +52,20 @@ jobs:
         run: |
           count=$(jq '.articles | length' docs/data.json)
           echo "exported_articles_count=${count}"
+          echo "exported_at=$(jq -r '.exported_at' docs/data.json)"
           if [ "${count}" -eq 0 ]; then
-            echo "::warning::Export completed but contains 0 published articles. Check DB statuses (status='published')."
+            echo "::error::Export completed but contains 0 published articles. Check DATABASE_URL target and article statuses (status='published')."
+            exit 1
           else
             jq '.articles[0] | {id, title_ua, source_name, status}' docs/data.json
           fi
+
+      - name: Upload export debug artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-debug-data
+          path: docs/data.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
