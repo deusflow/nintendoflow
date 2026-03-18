@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080014" />
+    <title>Article - DEUSFLOW</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Bebas+Neue&family=Rajdhani:wght@500;600;700&family=Noto+Serif+JP:wght@900&display=swap');
+
+        :root {
+            --hyper-pink: #ff2e8f;
+            --milky-blush: #ffd1e0;
+            --deep-void: #080014;
+            --glass: rgba(255, 210, 230, 0.04);
+            --glass-border: rgba(255, 46, 143, 0.2);
+        }
+
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background: radial-gradient(circle at 50% 30%, #1a0026, var(--deep-void)); color:#ede8e3; font-family:'Rajdhani',sans-serif; min-height:100vh; overflow-x:hidden}
+
+        .scanlines { position:fixed; inset:0; background:linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%); z-index:1000; background-size:100% 4px; pointer-events:none; opacity:0.4 }
+
+        nav{position:sticky; top:0; z-index:100; height:60px; padding:0 40px; display:flex; align-items:center; justify-content:space-between; background:rgba(8,0,20,0.6); border-bottom:1px solid var(--glass-border); backdrop-filter:blur(24px)}
+        .logo-txt{font-family:'Black Ops One',sans-serif; font-size:18px; letter-spacing:6px; color:#fff; text-shadow: 0 0 15px var(--hyper-pink); cursor:pointer;}
+        .logo-txt span{color:var(--hyper-pink)}
+        .nav-back { font-size:14px; letter-spacing:2px; cursor:pointer; border: 1px solid var(--hyper-pink); padding: 6px 12px; border-radius: 6px; transition: all 0.3s; }
+        .nav-back:hover { background: rgba(255,46,143,0.1); }
+
+        .wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+        .article-head { margin-bottom: 40px; }
+        .article-img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 16px; border: 1px solid var(--glass-border); margin-bottom: 30px; }
+
+        .article-badge { display:inline-flex; align-items:center; background:rgba(255,46,143,0.15); border: 1px solid var(--hyper-pink); color:var(--milky-blush); padding:4px 12px; font-family:'Bebas Neue',sans-serif; font-size:12px; letter-spacing:2px; margin-bottom:12px; border-radius: 12px;}
+
+        .article-title { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:clamp(28px, 6vw, 48px); line-height:1.2; color:#fff; margin-bottom:20px; text-transform:uppercase; text-shadow: 0 0 10px rgba(255,255,255,0.2)}
+
+        .article-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid var(--glass-border); font-size: 13px; color: rgba(255,209,224,0.7); }
+        .meta-item { display: flex; flex-direction: column; gap: 4px; }
+        .meta-label { color: rgba(255,255,255,0.4); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .article-body {
+            font-size: 15px;
+            line-height: 1.8;
+            color: rgba(255,209,224,0.8);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-width: 100%;
+        }
+
+        .article-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--glass-border);
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn {
+            background:var(--hyper-pink);
+            color:#fff;
+            border:none;
+            padding:12px 24px;
+            font-family:'Bebas Neue',sans-serif;
+            font-size:15px;
+            letter-spacing:2px;
+            cursor:pointer;
+            font-weight:700;
+            border-radius: 8px;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background:#fff;
+            color:var(--hyper-pink);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(255,46,143,0.4)
+        }
+
+        .loading { display: flex; justify-content: center; align-items: center; min-height: 400px; font-size: 16px; color: rgba(255,255,255,0.5); }
+        .error { color: #ff6b9d; padding: 40px; text-align: center; }
+
+        @media (max-width: 768px) {
+            nav { padding: 0 20px; }
+            .wrap { padding: 20px; }
+            .article-title { font-size: clamp(20px, 5vw, 36px); }
+            .article-body { font-size: 14px; line-height: 1.6; }
+        }
+    </style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<nav>
+    <div class="logo-txt" onclick="window.location.href='./'">DEUS<span>⚡</span>FLOW</div>
+    <div class="nav-back" onclick="window.history.back()">← Back</div>
+</nav>
+
+<div class="wrap">
+    <div id="content">
+        <div class="loading">Loading article...</div>
+    </div>
+</div>
+
+<script>
+    async function loadArticle() {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+
+        if (!id) {
+            document.getElementById('content').innerHTML = '<div class="error">No article ID provided.</div>';
+            return;
+        }
+
+        try {
+            const response = await fetch('./data.json');
+            if (!response.ok) throw new Error('Failed to load data');
+            const data = await response.json();
+
+            const article = data.articles.find(a => a.id == id);
+            if (!article) {
+                document.getElementById('content').innerHTML = '<div class="error">Article not found.</div>';
+                return;
+            }
+
+            const title = article.title_ua || article.title_raw || 'Untitled';
+            document.title = `${title} - DEUSFLOW`;
+
+            const body = article.body_ua || article.description || 'No content available.';
+            const imageUrl = article.image_url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22900%22 height=%22420%22%3E%3Crect fill=%22%23150a1f%22 width=%22900%22 height=%22420%22/%3E%3C/svg%3E';
+
+            const publishedAt = article.published_at
+                ? new Date(article.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                : new Date(article.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+            document.getElementById('content').innerHTML = `
+                <div class="article-head">
+                    <div class="article-badge">${article.source_name || 'NEWS'}</div>
+                    <h1 class="article-title">${escapeHtml(title)}</h1>
+                    <div class="article-meta">
+                        <div class="meta-item">
+                            <div class="meta-label">Published</div>
+                            <div>${publishedAt}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">Source</div>
+                            <div>${escapeHtml(article.source_name || 'Unknown')}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">Score</div>
+                            <div>⭐ ${article.score || 0}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">AI Provider</div>
+                            <div>${article.ai_provider || '—'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" class="article-img" loading="lazy"/>
+                <div class="article-body">${escapeHtml(body)}</div>
+
+                <div class="article-footer">
+                    <a href="${escapeHtml(article.source_url)}" target="_blank" rel="noopener noreferrer" class="btn">Read Original</a>
+                </div>
+            `;
+        } catch (err) {
+            console.error('Load error:', err);
+            document.getElementById('content').innerHTML = '<div class="error">Failed to load article. Data file may not exist.</div>';
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadArticle);
+    } else {
+        loadArticle();
+    }
+</script>
+</body>
+</html>
+

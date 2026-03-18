@@ -11,16 +11,15 @@ Telegram-бот що автоматично збирає новини про Nin
 | AI routing | `ai_config.json` priority chain |
 | CI/CD | GitHub Actions |
 
-## Структура
+## Структура (Backend)
 
 ```
 nintendoflow/
 ├── cmd/bot/main.go              # точка входу, оркестратор
-├── internal/
+├── pkg/
 │   ├── config/config.go         # завантаження конфігурації з env
 │   ├── db/postgres.go           # підключення до Neon PostgreSQL
 │   ├── db/queries.go            # всі SQL-запити
-│   ├── fetcher/sources.go       # список RSS-джерел
 │   ├── fetcher/rss.go           # паралельне завантаження RSS
 │   ├── dedup/dedup.go           # дедуплікація (URL hash + Jaccard)
 │   ├── scorer/scorer.go         # оцінка релевантності
@@ -28,9 +27,10 @@ nintendoflow/
 │   ├── ai/provider.go           # AIProvider інтерфейс + помилки
 │   ├── ai/gemini.go             # primary: Gemini 2.5 Flash
 │   ├── ai/openrouter.go         # fallback: OpenRouter free models
-│   ├── ai/chain.go              # fallback chain + sanitizeOutput
+│   ├── ai/manager.go            # AI manager + retry/fallback
 │   ├── telegram/poster.go       # публікація в Telegram
 │   └── cleaner/cleaner.go       # очищення старих записів
+├── cmd/export/main.go           # export articles to GitHub Pages JSON
 ├── migrations/001_init.sql      # SQL схема
 └── .github/workflows/cron.yml  # GitHub Actions cron
 ```
@@ -70,6 +70,43 @@ go run ./cmd/bot
 # або з dry run (не постить в TG):
 DRY_RUN=true go run ./cmd/bot
 ```
+
+## Web Archive on GitHub Pages (2026 Best Practices)
+
+Static web archive deployed to GitHub Pages with zero frameworks and optimal performance.
+
+**Features:**
+- No JavaScript dependencies (zero framework overhead)
+- Lazy-loaded images with fallback placeholders
+- Dark mode by default with custom CSS tokens
+- Glassmorphism 2.0 UI with parallax hero
+- Fully responsive (mobile-first design)
+- 100% SEO-friendly (pre-rendered HTML)
+
+```bash
+# Local preview (requires Python 3.9+)
+cd docs/
+python -m http.server 8080
+```
+
+Then open: `http://localhost:8080`
+
+**Production Deployment:**
+
+1. Push to GitHub (main branch)
+2. Go to **Settings** → **Pages**
+3. Set source to `/docs` folder
+4. GitHub Pages will auto-deploy
+
+**Automatic Article Export:**
+
+Workflow `.github/workflows/export-to-pages.yml` runs every 3 hours:
+- Connects to PostgreSQL (DATABASE_URL secret)
+- Exports all published articles to `docs/data.json`
+- Commits and re-deploys site
+
+Configure GitHub Actions secrets:
+- `DATABASE_URL` — PostgreSQL connection string
 
 ## AI router config
 

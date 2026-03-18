@@ -328,6 +328,105 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_moderation_edit_sessions_article_id ON mod
 	return err
 }
 
+// ListPublishedArticles returns latest published articles for the web archive.
+func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) ([]Article, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
+		FROM articles
+		WHERE status=$1
+		ORDER BY COALESCE(published_at, created_at) DESC, id DESC
+		LIMIT $2 OFFSET $3`, StatusPublished, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	articles := make([]Article, 0, limit)
+	for rows.Next() {
+		var a Article
+		if err := rows.Scan(
+			&a.ID,
+			&a.SourceURL,
+			&a.URLHash,
+			&a.TitleHash,
+			&a.ContentHash,
+			&a.TitleRaw,
+			&a.TitleUA,
+			&a.BodyUA,
+			&a.ImageURL,
+			&a.SourceName,
+			&a.SourceType,
+			&a.Score,
+			&a.PostedTG,
+			&a.AIProvider,
+			&a.Status,
+			&a.PublishedAt,
+			&a.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		articles = append(articles, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return articles, nil
+}
+
+// CountPublishedArticles returns total published rows for pagination.
+func CountPublishedArticles(ctx context.Context, db *sql.DB) (int, error) {
+	var total int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM articles WHERE status=$1`, StatusPublished).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// GetPublishedArticleByID returns one published article by id.
+func GetPublishedArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
+	var a Article
+	err := db.QueryRowContext(ctx, `
+		SELECT id, source_url, url_hash, title_hash, content_hash, title_raw, COALESCE(title_ua, ''),
+		       COALESCE(body_ua, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
+		FROM articles
+		WHERE id=$1 AND status=$2`, id, StatusPublished).
+		Scan(
+			&a.ID,
+			&a.SourceURL,
+			&a.URLHash,
+			&a.TitleHash,
+			&a.ContentHash,
+			&a.TitleRaw,
+			&a.TitleUA,
+			&a.BodyUA,
+			&a.ImageURL,
+			&a.SourceName,
+			&a.SourceType,
+			&a.Score,
+			&a.PostedTG,
+			&a.AIProvider,
+			&a.Status,
+			&a.PublishedAt,
+			&a.CreatedAt,
+		)
+	if err != nil {
+		return Article{}, err
+	}
+	return a, nil
+}
+
 func nullStr(s string) interface{} {
 	if s == "" {
 		return nil

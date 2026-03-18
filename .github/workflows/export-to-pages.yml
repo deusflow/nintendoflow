@@ -1,0 +1,53 @@
+name: Export Articles to GitHub Pages
+
+on:
+  schedule:
+    # Кожні 3 години
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
+
+      - name: Export articles to JSON
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          go run ./cmd/export/main.go
+
+      - name: Commit and push data.json
+        run: |
+          git config --global user.name "DEUSFLOW Bot"
+          git config --global user.email "bot@deusflow.local"
+          git add docs/data.json
+          git commit -m "docs: update articles export $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || true
+          git push
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          cname: archive.deusflow.local
+

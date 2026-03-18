@@ -4,6 +4,7 @@
 *.exe
 *.test
 *.out
+/export
 
 # Dependency directories (remove the comment below if you use Go modules)
 /vendor/
