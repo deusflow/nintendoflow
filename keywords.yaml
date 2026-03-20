@@ -40,7 +40,7 @@ topics:
 
   hardware_anchor:
     enabled: true
-    priority: 110
+    priority: 120
     keywords:
       - word: "switch 2"
         role: anchor
@@ -226,20 +226,20 @@ topics:
     keywords:
       - word: "free-to-play"
         role: signal
-        weight: 8
+        weight: 20
       - word: "f2p"
         role: signal
         weight: 8
       - word: "free to play"
         role: signal
-        weight: 8
+        weight: 20
       - word: "free game"
         role: signal
-        weight: 6
+        weight: 20
 
   patch:
     enabled: true
-    priority: 70
+    priority: 90
     keywords:
       - word: "update"
         role: signal
