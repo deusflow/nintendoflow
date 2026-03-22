@@ -239,17 +239,21 @@ func main() {
 
 	selected := topCandidates[selectedIdx]
 
-	// Step 6.5: fetch og:image only for the single winning article.
+	// Step 6.5: fetch preferred media only for the single winning article.
+	selected.item.VideoURL = ""
 	selected.item.ImageURL = ""
 	imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
-	ogImage, imageErr := fetcher.FetchOGImage(imageCtx, selected.item.Link)
+	videoURL, imageURL, imageErr := fetcher.FetchPreferredMedia(imageCtx, selected.item.Link)
 	imageCancel()
 	if imageErr != nil {
-		slog.Warn("og:image fetch failed, fallback to no image", "url", selected.item.Link, "error", imageErr)
-	} else if ogImage == "" {
-		slog.Info("og:image not found, fallback to no image", "url", selected.item.Link)
+		slog.Warn("media fetch failed, fallback to no media", "url", selected.item.Link, "error", imageErr)
+	} else if videoURL != "" {
+		selected.item.VideoURL = videoURL
+		slog.Info("youtube video extracted", "url", selected.item.Link, "video_url", videoURL)
+	} else if imageURL == "" {
+		slog.Info("no preferred media found, fallback to text-only", "url", selected.item.Link)
 	} else {
-		selected.item.ImageURL = ogImage
+		selected.item.ImageURL = imageURL
 		slog.Info("og:image extracted", "url", selected.item.Link)
 	}
 	logStage("image_fetch", stageStart, runStart)
@@ -284,6 +288,7 @@ func main() {
 		ContentHash: selected.item.ContentHash,
 		TitleRaw:    selected.item.Title,
 		BodyUA:      rewritten,
+		VideoURL:    selected.item.VideoURL,
 		ImageURL:    selected.item.ImageURL,
 		SourceName:  selected.item.SourceName,
 		SourceType:  selected.item.SourceType,

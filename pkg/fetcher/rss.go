@@ -30,6 +30,7 @@ type Item struct {
 	Title          string
 	Link           string
 	Description    string
+	VideoURL       string
 	ImageURL       string
 	PublishedAt    *time.Time
 	SourceName     string

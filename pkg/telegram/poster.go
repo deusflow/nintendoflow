@@ -11,6 +11,25 @@ import (
 // PostArticle sends an article to the Telegram channel.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
 func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
+	if article.VideoURL != "" {
+		video := tgbotapi.VideoConfig{
+			BaseFile: tgbotapi.BaseFile{
+				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+				File:     tgbotapi.FileURL(article.VideoURL),
+			},
+			Caption:   buildCaption(&article, 1024),
+			ParseMode: "HTML",
+		}
+		if _, err := bot.Send(video); err == nil {
+			return nil
+		}
+
+		// YouTube page URLs can fail in sendVideo because they are not direct file URLs.
+		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
+			return nil
+		}
+	}
+
 	if article.ImageURL != "" {
 		photo := tgbotapi.PhotoConfig{
 			BaseFile: tgbotapi.BaseFile{
@@ -29,6 +48,16 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 		return nil
 	}
 	return sendText(bot, channelID, article)
+}
+
+func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
+	caption := buildCaption(&article, 3800)
+	msg := tgbotapi.NewMessageToChannel(channelID, article.VideoURL+"\n\n"+caption)
+	msg.ParseMode = "HTML"
+	if _, err := bot.Send(msg); err != nil {
+		return fmt.Errorf("telegram sendMessage with video link: %w", err)
+	}
+	return nil
 }
 
 func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
