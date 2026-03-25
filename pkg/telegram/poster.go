@@ -52,8 +52,13 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 
 func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
 	caption := buildCaption(&article, 3800)
-	msg := tgbotapi.NewMessageToChannel(channelID, article.VideoURL+"\n\n"+caption)
+	// Use an invisible link at the start of the message to trigger the link preview
+	// without showing the messy URL text. We use html.EscapeString to ensure valid HTML.
+	safeURL := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(article.VideoURL, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+	invisibleLink := fmt.Sprintf(`<a href="%s">%s</a>`, safeURL, "\u200b")
+	msg := tgbotapi.NewMessageToChannel(channelID, invisibleLink+caption)
 	msg.ParseMode = "HTML"
+
 	if _, err := bot.Send(msg); err != nil {
 		return fmt.Errorf("telegram sendMessage with video link: %w", err)
 	}
