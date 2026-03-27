@@ -1,6 +1,0 @@
-﻿2026-03-16T07:32:12.3052392Z ##[group]Run go build -o bot ./cmd/bot
-2026-03-16T07:32:12.3052833Z [36;1mgo build -o bot ./cmd/bot[0m
-2026-03-16T07:32:12.3086990Z shell: /usr/bin/bash -e {0}
-2026-03-16T07:32:12.3087277Z env:
-2026-03-16T07:32:12.3087474Z   GOTOOLCHAIN: local
-2026-03-16T07:32:12.3087705Z ##[endgroup]

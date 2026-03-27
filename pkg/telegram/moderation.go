@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"fmt"
+	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -18,18 +20,100 @@ const (
 
 func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Article) (int, error) {
 	text := buildModerationPreviewText(article)
+	chat, channel, err := resolveChat(chatID)
+	if err != nil {
+		return 0, err
+	}
+	markup := moderationKeyboard(article.ID)
+
+	previewImage := strings.TrimSpace(article.ImageURL)
+	if previewImage == "" {
+		previewImage = youtubeThumbnailURL(article.VideoURL)
+	}
+
+	if previewImage != "" {
+		photo := tgbotapi.PhotoConfig{
+			BaseFile: tgbotapi.BaseFile{
+				BaseChat: tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel},
+				File:     tgbotapi.FileURL(previewImage),
+			},
+			Caption:   text,
+			ParseMode: "HTML",
+		}
+		photo.ReplyMarkup = markup
+		sent, sendErr := bot.Send(photo)
+		if sendErr == nil {
+			return sent.MessageID, nil
+		}
+		slog.Warn("telegram preview media send failed",
+			"mode", "preview",
+			"step", "send_photo",
+			"article_id", article.ID,
+			"image_url", previewImage,
+			"video_url", strings.TrimSpace(article.VideoURL),
+			"error", sendErr,
+		)
+	}
+
+	if strings.TrimSpace(article.VideoURL) != "" {
+		text = fmt.Sprintf("%s\n\n%s", escapeHTML(strings.TrimSpace(article.VideoURL)), text)
+	}
+
 	msg, err := newTextMessage(chatID, text)
 	if err != nil {
 		return 0, err
 	}
 	msg.ParseMode = "HTML"
-	msg.ReplyMarkup = moderationKeyboard(article.ID)
+	msg.ReplyMarkup = markup
 
 	sent, err := bot.Send(msg)
 	if err != nil {
 		return 0, fmt.Errorf("telegram send preview: %w", err)
 	}
 	return sent.MessageID, nil
+}
+
+func resolveChat(chatID string) (int64, string, error) {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return 0, "", fmt.Errorf("empty chat id")
+	}
+	if strings.HasPrefix(chatID, "@") {
+		return 0, chatID, nil
+	}
+	numericID, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid numeric chat id: %w", err)
+	}
+	return numericID, "", nil
+}
+
+func youtubeThumbnailURL(videoURL string) string {
+	u, err := url.Parse(strings.TrimSpace(videoURL))
+	if err != nil || u == nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	var id string
+	if host == "youtu.be" {
+		id = strings.Trim(u.Path, "/")
+	} else if strings.Contains(host, "youtube.com") {
+		id = strings.TrimSpace(u.Query().Get("v"))
+		if id == "" {
+			parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+			if len(parts) >= 2 {
+				switch parts[0] {
+				case "embed", "shorts", "live":
+					id = parts[1]
+				}
+			}
+		}
+	}
+	id = strings.Trim(id, " ")
+	if len(id) != 11 {
+		return ""
+	}
+	return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
 }
 
 func EditModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string) error {
@@ -125,18 +209,14 @@ func buildModerationPreviewText(article db.Article) string {
 }
 
 func newTextMessage(chatID string, text string) (tgbotapi.MessageConfig, error) {
-	chatID = strings.TrimSpace(chatID)
-	if chatID == "" {
-		return tgbotapi.MessageConfig{}, fmt.Errorf("empty chat id")
-	}
-	if strings.HasPrefix(chatID, "@") {
-		return tgbotapi.NewMessageToChannel(chatID, text), nil
-	}
-	numericID, err := strconv.ParseInt(chatID, 10, 64)
+	chat, channel, err := resolveChat(chatID)
 	if err != nil {
-		return tgbotapi.MessageConfig{}, fmt.Errorf("invalid numeric chat id: %w", err)
+		return tgbotapi.MessageConfig{}, err
 	}
-	return tgbotapi.NewMessage(numericID, text), nil
+	if channel != "" {
+		return tgbotapi.NewMessageToChannel(channel, text), nil
+	}
+	return tgbotapi.NewMessage(chat, text), nil
 }
 
 func escapeHTML(s string) string {

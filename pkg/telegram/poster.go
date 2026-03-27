@@ -1,7 +1,12 @@
 package telegram
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
@@ -22,11 +27,27 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 		}
 		if _, err := bot.Send(video); err == nil {
 			return nil
+		} else {
+			slog.Warn("telegram publish media send failed",
+				"mode", "publish",
+				"step", "send_video",
+				"article_id", article.ID,
+				"video_url", article.VideoURL,
+				"error", err,
+			)
 		}
 
 		// YouTube page URLs can fail in sendVideo because they are not direct file URLs.
 		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
 			return nil
+		} else {
+			slog.Warn("telegram publish media fallback failed",
+				"mode", "publish",
+				"step", "send_text_with_video_link",
+				"article_id", article.ID,
+				"video_url", article.VideoURL,
+				"error", err,
+			)
 		}
 	}
 
@@ -42,6 +63,13 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 			ParseMode: "HTML",
 		}
 		if _, err := bot.Send(photo); err != nil {
+			slog.Warn("telegram publish media send failed",
+				"mode", "publish",
+				"step", "send_photo",
+				"article_id", article.ID,
+				"image_url", article.ImageURL,
+				"error", err,
+			)
 			// fallback to text-only
 			return sendText(bot, channelID, article)
 		}
@@ -52,15 +80,46 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 
 func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
 	caption := buildCaption(&article, 3800)
-	// Use an invisible link at the start of the message to trigger the link preview
-	// without showing the messy URL text. We use html.EscapeString to ensure valid HTML.
-	safeURL := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(article.VideoURL, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
-	invisibleLink := fmt.Sprintf(`<a href="%s">%s</a>`, safeURL, "\u200b")
-	msg := tgbotapi.NewMessageToChannel(channelID, invisibleLink+caption)
-	msg.ParseMode = "HTML"
+	videoURL := strings.TrimSpace(article.VideoURL)
+	text := caption + "\n\n" + videoURL
 
-	if _, err := bot.Send(msg); err != nil {
+	// tgbotapi v5 does not expose LinkPreviewOptions, so send raw API payload.
+	type linkPreviewOptions struct {
+		URL              string `json:"url"`
+		PreferLargeMedia bool   `json:"prefer_large_media"`
+		ShowAboveText    bool   `json:"show_above_text"`
+	}
+	type payload struct {
+		ChatID             string             `json:"chat_id"`
+		Text               string             `json:"text"`
+		ParseMode          string             `json:"parse_mode"`
+		LinkPreviewOptions linkPreviewOptions `json:"link_preview_options"`
+	}
+
+	body, err := json.Marshal(payload{
+		ChatID:    channelID,
+		Text:      text,
+		ParseMode: "HTML",
+		LinkPreviewOptions: linkPreviewOptions{
+			URL:              videoURL,
+			PreferLargeMedia: true,
+			ShowAboveText:    true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", bot.Token)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
 		return fmt.Errorf("telegram sendMessage with video link: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram api error %d: %s", resp.StatusCode, string(raw))
 	}
 	return nil
 }
