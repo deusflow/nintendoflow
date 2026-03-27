@@ -370,7 +370,7 @@
         carousel.innerHTML = articles.map(a => `
             <a href="./article.html?id=${a.id}" class="c-card">
                 <div class="c-thumb">
-                    <img src="${escapeHtml(a.image_url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22340%22 height=%22180%22%3E%3Crect fill=%22%23150a1f%22 width=%22340%22 height=%22180%22/%3E%3C/svg%3E')}" alt="${escapeHtml(stripHtml(a.title_ua || a.title_raw || ''))}" loading="lazy"/>
+                    <img src="${escapeHtml(resolveImageURL(a))}" alt="${escapeHtml(stripHtml(a.title_ua || a.title_raw || ''))}" loading="lazy"/>
                     <div class="c-tag">${escapeHtml(a.source_name || 'NEWS')}</div>
                 </div>
                 <div class="c-body">
@@ -382,6 +382,24 @@
                 </div>
             </a>
         `).join('');
+    }
+
+    function resolveImageURL(article) {
+        if (article && article.image_url) {
+            return article.image_url;
+        }
+        const t = String((article && article.article_type) || 'news').toLowerCase().trim();
+        switch (t) {
+            case 'insight':
+                return './assets/placeholders/news-fallback-16x9.webp';
+            case 'rumor':
+                return './assets/placeholders/card-fallback-16x9.webp';
+            case 'offtop':
+                return './assets/placeholders/offtop-fallback-16x9.webp';
+            case 'news':
+            default:
+                return './assets/placeholders/newstwo-fallback-16x9.webp';
+        }
     }
 
     function stripHtml(input) {

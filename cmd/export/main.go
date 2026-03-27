@@ -21,6 +21,7 @@ type ExportArticle struct {
 	BodyUA      string     `json:"body_ua"`
 	Description string     `json:"description"`
 	ImageURL    string     `json:"image_url"`
+	ArticleType string     `json:"article_type"`
 	SourceName  string     `json:"source_name"`
 	SourceType  string     `json:"source_type"`
 	SourceURL   string     `json:"source_url"`
@@ -112,6 +113,7 @@ func main() {
 				BodyUA:      a.BodyUA,
 				Description: a.BodyUA, // Use body_ua as description for JSON
 				ImageURL:    a.ImageURL,
+				ArticleType: a.ArticleType,
 				SourceName:  a.SourceName,
 				SourceType:  a.SourceType,
 				SourceURL:   a.SourceURL,

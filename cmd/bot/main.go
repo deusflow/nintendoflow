@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	maxAICallsPerRun = 2
-	aiCallDelay      = 20 * time.Second
+	maxAICallsPerRun           = 2
+	aiCallDelay                = 20 * time.Second
+	defaultPlaceholdersBaseURL = "https://deusflow.github.io/nintendoflow/assets/placeholders"
 )
 
 type candidate struct {
@@ -278,8 +279,20 @@ func main() {
 	}
 	rewriteProvider := manager.LastProvider()
 	slog.Info("AI rewrite used", "provider", rewriteProvider)
+	articleType, cleanBody := ai.ParseTypedPost(rewritten)
+	if cleanBody == "" {
+		cleanBody = rewritten
+	}
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()
+
+	if selected.item.VideoURL == "" && selected.item.ImageURL == "" {
+		selected.item.ImageURL = fallbackImageForType(articleType)
+		slog.Info("fallback image selected",
+			"article_type", articleType,
+			"image_url", selected.item.ImageURL,
+		)
+	}
 
 	article := db.Article{
 		SourceURL:   selected.item.Link,
@@ -287,11 +300,12 @@ func main() {
 		TitleHash:   selected.titleHash,
 		ContentHash: selected.item.ContentHash,
 		TitleRaw:    selected.item.Title,
-		BodyUA:      rewritten,
+		BodyUA:      cleanBody,
 		VideoURL:    selected.item.VideoURL,
 		ImageURL:    selected.item.ImageURL,
 		SourceName:  selected.item.SourceName,
 		SourceType:  selected.item.SourceType,
+		ArticleType: articleType,
 		Score:       selected.score,
 		Status:      db.StatusPending,
 		PublishedAt: selected.item.PublishedAt,
@@ -306,7 +320,7 @@ func main() {
 		}
 		article.ID = articleID
 
-		if err := db.UpdateBodyUA(ctx, database, article.ID, rewritten, rewriteProvider); err != nil {
+		if err := db.UpdateBodyUA(ctx, database, article.ID, cleanBody, rewriteProvider); err != nil {
 			slog.Warn("update body_ua failed", "error", err)
 		}
 
@@ -352,7 +366,7 @@ func main() {
 	}
 	article.ID = articleID
 
-	if err := db.UpdateBodyUA(ctx, database, article.ID, rewritten, rewriteProvider); err != nil {
+	if err := db.UpdateBodyUA(ctx, database, article.ID, cleanBody, rewriteProvider); err != nil {
 		slog.Warn("update body_ua failed", "error", err)
 	}
 
@@ -412,6 +426,27 @@ func parseSelectedIndex(raw string, count int) (int, bool) {
 		return 0, false
 	}
 	return n - 1, true
+}
+
+func fallbackImageForType(articleType string) string {
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("PLACEHOLDER_BASE_URL")), "/")
+	if base == "" {
+		base = defaultPlaceholdersBaseURL
+	}
+
+	fileName := "newstwo-fallback-16x9.webp"
+	switch ai.NormalizeArticleType(articleType) {
+	case ai.ArticleTypeInsight:
+		fileName = "news-fallback-16x9.webp"
+	case ai.ArticleTypeRumor:
+		fileName = "card-fallback-16x9.webp"
+	case ai.ArticleTypeOfftop:
+		fileName = "offtop-fallback-16x9.webp"
+	case ai.ArticleTypeNews:
+		fileName = "newstwo-fallback-16x9.webp"
+	}
+
+	return base + "/" + fileName
 }
 
 func logStage(name string, stageStart, runStart time.Time) {

@@ -27,6 +27,7 @@ type Article struct {
 	ImageURL    string
 	SourceName  string
 	SourceType  string
+	ArticleType string
 	Score       int
 	PostedTG    bool
 	AIProvider  string
@@ -53,17 +54,18 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 	var id int
 	err := db.QueryRowContext(ctx, `
 		INSERT INTO articles
-			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, score, status, published_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, article_type, score, status, published_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (source_url) DO UPDATE
 		SET score=GREATEST(articles.score, EXCLUDED.score),
+			article_type=COALESCE(NULLIF(articles.article_type,''), EXCLUDED.article_type),
 			status=CASE
 				WHEN articles.status='published' THEN articles.status
 				ELSE EXCLUDED.status
 			END
 		RETURNING id`,
 		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw, nullStr(a.VideoURL), nullStr(a.ImageURL),
-		a.SourceName, a.SourceType, a.Score, status, a.PublishedAt,
+		a.SourceName, a.SourceType, nullStr(a.ArticleType), a.Score, status, a.PublishedAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -75,7 +77,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
-		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
 		WHERE id=$1`, id).
@@ -92,6 +94,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 			&a.ImageURL,
 			&a.SourceName,
 			&a.SourceType,
+			&a.ArticleType,
 			&a.Score,
 			&a.PostedTG,
 			&a.AIProvider,
@@ -296,6 +299,7 @@ CREATE TABLE IF NOT EXISTS articles (
     image_url    TEXT,
     source_name  TEXT NOT NULL,
     source_type  TEXT NOT NULL DEFAULT 'media',
+		  article_type TEXT NOT NULL DEFAULT 'news',
     score        INT DEFAULT 0,
     posted_tg    BOOLEAN DEFAULT FALSE,
 	status       TEXT NOT NULL DEFAULT 'pending',
@@ -307,6 +311,10 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS url_hash TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS title_hash TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS article_type TEXT;
+UPDATE articles SET article_type='news' WHERE article_type IS NULL OR article_type='';
+ALTER TABLE articles ALTER COLUMN article_type SET DEFAULT 'news';
+ALTER TABLE articles ALTER COLUMN article_type SET NOT NULL;
 UPDATE articles SET status='published' WHERE posted_tg=TRUE AND (status IS NULL OR status='');
 UPDATE articles SET status='pending' WHERE posted_tg=FALSE AND (status IS NULL OR status='');
 ALTER TABLE articles ALTER COLUMN status SET DEFAULT 'pending';
@@ -316,6 +324,7 @@ CREATE INDEX IF NOT EXISTS idx_articles_status       ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at   ON articles(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
 CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_article_type ON articles(article_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_url_hash_unique ON articles(url_hash) WHERE url_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_title_hash ON articles(title_hash);
 CREATE TABLE IF NOT EXISTS moderation_edit_sessions (
@@ -343,7 +352,7 @@ func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) (
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
-		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
 		WHERE status=$1
@@ -370,6 +379,7 @@ func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) (
 			&a.ImageURL,
 			&a.SourceName,
 			&a.SourceType,
+			&a.ArticleType,
 			&a.Score,
 			&a.PostedTG,
 			&a.AIProvider,
@@ -403,7 +413,7 @@ func GetPublishedArticleByID(ctx context.Context, db *sql.DB, id int) (Article, 
 	var a Article
 	err := db.QueryRowContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
-		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, score,
+		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
 		WHERE id=$1 AND status=$2`, id, StatusPublished).
@@ -420,6 +430,7 @@ func GetPublishedArticleByID(ctx context.Context, db *sql.DB, id int) (Article, 
 			&a.ImageURL,
 			&a.SourceName,
 			&a.SourceType,
+			&a.ArticleType,
 			&a.Score,
 			&a.PostedTG,
 			&a.AIProvider,
