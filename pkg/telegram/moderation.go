@@ -56,7 +56,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	}
 
 	if strings.TrimSpace(article.VideoURL) != "" {
-		text = fmt.Sprintf("%s\n\n%s", escapeHTML(strings.TrimSpace(article.VideoURL)), text)
+		text = fmt.Sprintf("%s\n\n%s", text, strings.TrimSpace(article.VideoURL))
 	}
 
 	msg, err := newTextMessage(chatID, text)
@@ -64,6 +64,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 		return 0, err
 	}
 	msg.ParseMode = "HTML"
+	msg.DisableWebPagePreview = false
 	msg.ReplyMarkup = markup
 
 	sent, err := bot.Send(msg)
