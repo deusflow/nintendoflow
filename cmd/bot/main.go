@@ -164,11 +164,13 @@ func main() {
 
 		urlHash := dedup.HashURL(item.Link)
 		titleHash := dedup.HashTitle(item.Title)
+		semanticSig := dedup.SemanticSignature(item.Title)
 
 		if _, exists := knownURLs[urlHash]; exists {
 			continue
 		}
 		if _, exists := knownTitles[titleHash]; exists {
+			slog.Debug("candidate duplicate title hash (semantic)", "signature", semanticSig, "title", item.Title)
 			continue
 		}
 
@@ -195,6 +197,7 @@ func main() {
 			urlHash:   urlHash,
 			titleHash: titleHash,
 		})
+		slog.Debug("candidate accepted for AI", "title", item.Title, "score", result.Score, "signature", semanticSig)
 		knownURLs[urlHash] = struct{}{}
 		knownTitles[titleHash] = struct{}{}
 		if candidateText != "" {

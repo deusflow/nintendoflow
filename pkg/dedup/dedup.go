@@ -27,6 +27,50 @@ var fillerPhrases = []string{
 	"here is what changed",
 }
 
+// SemanticSignature generates a short signature of keywords from a title.
+// Example: "The Legend of Zelda: Echoes of Wisdom Update" -> "[echoes, legend, update, wisdom, zelda]"
+func SemanticSignature(title string) string {
+	tokens := normalizeTokens(title)
+	if len(tokens) == 0 {
+		return "[]"
+	}
+
+	// Filter out highly generic words to focus on the unique news aspect.
+	genericWords := map[string]bool{
+		"nintendo": true, "switch": true, "game": true, "games": true,
+		"play": true, "video": true, "console": true, "release": true,
+	}
+
+	var sigTokens []string
+	for _, t := range tokens {
+		if !genericWords[t] {
+			sigTokens = append(sigTokens, t)
+		}
+	}
+
+	if len(sigTokens) == 0 {
+		sigTokens = tokens
+	}
+
+	set := make(map[string]struct{})
+	for _, t := range sigTokens {
+		set[t] = struct{}{}
+	}
+
+	uniq := make([]string, 0, len(set))
+	for tok := range set {
+		uniq = append(uniq, tok)
+	}
+	sort.Strings(uniq)
+
+	// Keep up to 5 significant keywords for the signature
+	if len(uniq) > 5 {
+		uniq = uniq[:5]
+	}
+
+	return "[" + strings.Join(uniq, ", ") + "]"
+}
+
 // HashURL returns a sha256 hex hash of the URL (Layer 1 dedup).
 func HashURL(url string) string {
 	h := sha256.Sum256([]byte(url))
@@ -35,8 +79,8 @@ func HashURL(url string) string {
 
 // HashTitle returns a normalized sha256 hash for title dedup in DB.
 func HashTitle(title string) string {
-	fingerprint := FingerprintText(title)
-	h := sha256.Sum256([]byte(fingerprint))
+	sig := SemanticSignature(title)
+	h := sha256.Sum256([]byte(sig))
 	return hex.EncodeToString(h[:])
 }
 
