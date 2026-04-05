@@ -183,8 +183,15 @@ func main() {
 			}
 		}
 
+		effectiveMinScore := cfg.MinScore
+		if item.SourcePriority > 0 {
+			// Lower priority -> higher min score requirement. Higher priority -> lower min score requirement.
+			// e.g. Priority 50 adds +25 to requirement. Priority 120 reduces requirement by 10.
+			effectiveMinScore += (100 - item.SourcePriority) / 2
+		}
+
 		// Score + Nintendo relevance gate
-		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, topics, cfg.MinScore, item.RequireAnchor)
+		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, topics, effectiveMinScore, item.RequireAnchor)
 		if !ok {
 			slog.Debug("candidate filtered out", "reason", reason, "title", item.Title)
 			continue
@@ -286,6 +293,18 @@ func main() {
 	if cleanBody == "" {
 		cleanBody = rewritten
 	}
+
+	hypeCount := calculateHype(selected.item, items)
+	var hypeText string
+	if hypeCount > 3 {
+		hypeText = fmt.Sprintf("\n\n🔥 <i>Цю подію обговорюють у %d інших джерелах</i>", hypeCount)
+	} else if hypeCount == 1 {
+		hypeText = "\n\n💎 <i>Ексклюзив (знайдено лише тут)</i>"
+	} else {
+		hypeText = fmt.Sprintf("\n\n🔥 <i>Знайдено у %d джерелах</i>", hypeCount)
+	}
+	cleanBody += hypeText
+
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()
 
@@ -480,6 +499,41 @@ func sortCandidates(candidates []candidate) {
 		}
 		return candidates[i].rankScore > candidates[j].rankScore
 	})
+}
+
+func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
+	hypeCount := 1
+	hypeSources := make(map[string]struct{})
+	hypeSources[selectedItem.SourceName] = struct{}{}
+
+	selectedSig := dedup.SemanticSignature(selectedItem.Title)
+	selectedFingerprint := dedup.BuildSimilarityText(selectedItem.Title, selectedItem.Description)
+
+	for _, it := range allItems {
+		if it.Link == selectedItem.Link {
+			continue
+		}
+		if _, exists := hypeSources[it.SourceName]; exists {
+			continue
+		}
+
+		match := false
+		if dedup.SemanticSignature(it.Title) == selectedSig {
+			match = true
+		} else if selectedFingerprint != "" {
+			itFingerprint := dedup.BuildSimilarityText(it.Title, it.Description)
+			if itFingerprint != "" && dedup.Similarity(selectedFingerprint, itFingerprint) >= 0.60 {
+				match = true
+			}
+		}
+
+		if match {
+			hypeCount++
+			hypeSources[it.SourceName] = struct{}{}
+		}
+	}
+
+	return hypeCount
 }
 
 func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiRetries, aiCallsBudget int, runStart time.Time) {

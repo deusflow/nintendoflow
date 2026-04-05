@@ -109,7 +109,7 @@
 - url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+insider+leak&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo insider"
   lang: en
-  priority: 75
+  priority: 50
   active: true
   type: aggregator
   require_anchor: true
@@ -118,7 +118,7 @@
 - url: "https://news.google.com/rss/search?q=Nintendo+Direct+announce+2026&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo Direct"
   lang: en
-  priority: 60
+  priority: 50
   active: true
   type: aggregator
   require_anchor: true
@@ -127,7 +127,7 @@
 - url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+Digital+Foundry+specs+performance&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Tech & Specs"
   lang: en
-  priority: 80
+  priority: 50
   active: true
   type: aggregator
   require_anchor: true
