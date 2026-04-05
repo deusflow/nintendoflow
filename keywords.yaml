@@ -57,9 +57,24 @@ topics:
 
   hardware_tech:
     enabled: true
-    priority: 100
+    priority: 150
     keywords:
       # Технічний потенціал і розкриття можливостей
+      - word: "architecture" # архитектура консоли
+      - role: tech
+      - weight: 85
+      - word: "teraflops" # единица мощности
+      - role: tech
+      - weight: 85
+      - word: "nvidia" # производитель железа
+      - role: tech
+      - weight: 80
+      - word: "dlss" # технология улучшения графики
+      - role: tech
+      - weight: 85
+      - word: "clock speed" # частота процессора
+      - role: tech
+      - weight: 80
       - word: "developer insight"
         role: tech
         weight: 75
@@ -159,7 +174,7 @@ topics:
 
   franchises:
     enabled: true
-    priority: 120
+    priority: 70
     keywords:
       - word: "mario"
         role: anchor
@@ -284,7 +299,7 @@ topics:
 
   comparison:
     enabled: true
-    priority: 90
+    priority: 120
     keywords:
       - word: "vs"
         role: comparison
