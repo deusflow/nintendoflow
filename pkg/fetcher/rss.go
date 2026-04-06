@@ -27,17 +27,18 @@ var (
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
-	Title          string
-	Link           string
-	Description    string
-	VideoURL       string
-	ImageURL       string
-	PublishedAt    *time.Time
-	SourceName     string
-	SourcePriority int
-	SourceType     string
-	RequireAnchor  bool
-	ContentHash    string
+	Title             string
+	Link              string
+	Description       string
+	VideoURL          string
+	ImageURL          string
+	PublishedAt       *time.Time
+	SourcePublishedAt *time.Time
+	SourceName        string
+	SourcePriority    int
+	SourceType        string
+	RequireAnchor     bool
+	ContentHash       string
 }
 
 // FetchAll fetches all active feeds and returns collected items.

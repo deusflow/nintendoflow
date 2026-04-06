@@ -28,6 +28,10 @@ const (
 	maxAICallsPerRun           = 2
 	aiCallDelay                = 20 * time.Second
 	defaultPlaceholdersBaseURL = "https://deusflow.github.io/nintendoflow/assets/placeholders"
+	aggregatorFreshnessHours   = 12
+	mediaFreshnessHours        = 24
+	insiderFreshnessHours      = 36
+	maxAgePenaltyPercent       = 60
 )
 
 type candidate struct {
@@ -135,20 +139,20 @@ func main() {
 	stageStart = time.Now()
 
 	// -- 6. Local filtering only (freshness + DB dedup hashes + score) ----
-	cutoff := time.Now().Add(-time.Duration(cfg.RecentTitlesHours) * time.Hour)
 	candidates := make([]candidate, 0, len(items))
+	dedupHours := maxInt(cfg.RecentTitlesHours, maxInt(aggregatorFreshnessHours, maxInt(mediaFreshnessHours, insiderFreshnessHours)))
 
-	knownURLs, err := db.FetchRecentURLHashes(ctx, database, cfg.RecentTitlesHours)
+	knownURLs, err := db.FetchRecentURLHashes(ctx, database, dedupHours)
 	if err != nil {
 		slog.Warn("fetch recent url hashes failed", "error", err)
 		knownURLs = make(map[string]struct{})
 	}
-	knownTitles, err := db.FetchRecentTitleHashes(ctx, database, cfg.RecentTitlesHours)
+	knownTitles, err := db.FetchRecentTitleHashes(ctx, database, dedupHours)
 	if err != nil {
 		slog.Warn("fetch recent title hashes failed", "error", err)
 		knownTitles = make(map[string]struct{})
 	}
-	recentDedupTexts, err := db.FetchRecentDedupTexts(ctx, database, cfg.RecentTitlesHours)
+	recentDedupTexts, err := db.FetchRecentDedupTexts(ctx, database, dedupHours)
 	if err != nil {
 		slog.Warn("fetch recent dedup texts failed", "error", err)
 		recentDedupTexts = nil
@@ -158,7 +162,9 @@ func main() {
 	}
 
 	for _, item := range items {
-		if item.PublishedAt == nil || item.PublishedAt.Before(cutoff) {
+		sourceFreshnessHours := freshnessHoursForSourceType(item.SourceType, cfg.RecentTitlesHours)
+		sourceCutoff := time.Now().Add(-time.Duration(sourceFreshnessHours) * time.Hour)
+		if item.PublishedAt == nil || item.PublishedAt.Before(sourceCutoff) {
 			continue
 		}
 
@@ -200,7 +206,7 @@ func main() {
 		candidates = append(candidates, candidate{
 			item:      item,
 			score:     result.Score,
-			rankScore: candidateRankingScore(result.Score, item.SourcePriority),
+			rankScore: candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours),
 			urlHash:   urlHash,
 			titleHash: titleHash,
 		})
@@ -228,6 +234,23 @@ func main() {
 		topN = len(candidates)
 	}
 	topCandidates := candidates[:topN]
+	checkedTop, dateChecked, dateDropped, dateUnknown := validateTopCandidatesFreshness(ctx, topCandidates, cfg.RecentTitlesHours)
+	sortCandidates(checkedTop)
+	slog.Info("source-date freshness check complete",
+		"checked", dateChecked,
+		"dropped_stale", dateDropped,
+		"unknown_source_date", dateUnknown,
+		"remaining", len(checkedTop),
+	)
+	logStage("source_date_check", stageStart, runStart)
+	stageStart = time.Now()
+
+	if len(checkedTop) < 1 {
+		slog.Info("no candidates this run")
+		logFinalStats(fetchedCount, 0, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+		return
+	}
+	topCandidates = checkedTop
 
 	selectionPrompt := buildSelectorPrompt(topCandidates)
 
@@ -479,11 +502,42 @@ func logStage(name string, stageStart, runStart time.Time) {
 	)
 }
 
-func candidateRankingScore(contentScore, sourcePriority int) int {
+func candidateRankingScore(contentScore, sourcePriority int, publishedAt *time.Time, sourceType string, defaultHours int) int {
 	if sourcePriority <= 0 {
 		sourcePriority = 100
 	}
-	return contentScore * (100 + sourcePriority/feedPriorityRankingScale) / 100
+	base := contentScore * (100 + sourcePriority/feedPriorityRankingScale) / 100
+	if publishedAt == nil {
+		return base
+	}
+
+	windowHours := freshnessHoursForSourceType(sourceType, defaultHours)
+	if windowHours <= 0 {
+		return base
+	}
+
+	ageHours := time.Since(*publishedAt).Hours()
+	if ageHours <= 0 {
+		return base
+	}
+
+	ratio := ageHours / float64(windowHours)
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+	penaltyPercent := int(ratio * maxAgePenaltyPercent)
+	if penaltyPercent <= 0 {
+		return base
+	}
+
+	adjusted := base * (100 - penaltyPercent) / 100
+	if adjusted < 1 {
+		return 1
+	}
+	return adjusted
 }
 
 func sortCandidates(candidates []candidate) {
@@ -534,6 +588,88 @@ func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
 	}
 
 	return hypeCount
+}
+
+func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candidate, defaultHours int) ([]candidate, int, int, int) {
+	validated := make([]candidate, 0, len(topCandidates))
+	checked := 0
+	dropped := 0
+	unknown := 0
+
+	for _, c := range topCandidates {
+		checked++
+		dateCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		sourcePublishedAt, err := fetcher.FetchSourcePublishedAt(dateCtx, c.item.Link)
+		cancel()
+		if err != nil {
+			unknown++
+			slog.Warn("source-date check failed; keeping candidate with feed date",
+				"title", c.item.Title,
+				"source", c.item.SourceName,
+				"url", c.item.Link,
+				"error", err,
+			)
+			validated = append(validated, c)
+			continue
+		}
+
+		if sourcePublishedAt == nil {
+			unknown++
+			slog.Debug("source-date missing; keeping candidate with feed date",
+				"title", c.item.Title,
+				"source", c.item.SourceName,
+				"url", c.item.Link,
+			)
+			validated = append(validated, c)
+			continue
+		}
+
+		ageHours := int(time.Since(*sourcePublishedAt).Hours())
+		sourceFreshnessHours := freshnessHoursForSourceType(c.item.SourceType, defaultHours)
+		sourceCutoff := time.Now().Add(-time.Duration(sourceFreshnessHours) * time.Hour)
+		if sourcePublishedAt.Before(sourceCutoff) {
+			dropped++
+			slog.Info("candidate dropped by source-date freshness",
+				"title", c.item.Title,
+				"source", c.item.SourceName,
+				"url", c.item.Link,
+				"source_published_at", sourcePublishedAt.UTC().Format(time.RFC3339),
+				"age_hours", ageHours,
+				"freshness_hours", sourceFreshnessHours,
+			)
+			continue
+		}
+
+		c.item.SourcePublishedAt = sourcePublishedAt
+		c.item.PublishedAt = sourcePublishedAt
+		c.rankScore = candidateRankingScore(c.score, c.item.SourcePriority, c.item.PublishedAt, c.item.SourceType, defaultHours)
+		validated = append(validated, c)
+	}
+
+	return validated, checked, dropped, unknown
+}
+
+func freshnessHoursForSourceType(sourceType string, fallback int) int {
+	switch strings.ToLower(strings.TrimSpace(sourceType)) {
+	case "aggregator":
+		return aggregatorFreshnessHours
+	case "media":
+		return mediaFreshnessHours
+	case "insider":
+		return insiderFreshnessHours
+	default:
+		if fallback > 0 {
+			return fallback
+		}
+		return mediaFreshnessHours
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func logFinalStats(fetched, filtered int, aiSelectorUsed, aiRewriteUsed, posted bool, aiCallsUsed, aiRetries, aiCallsBudget int, runStart time.Time) {
