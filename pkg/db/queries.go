@@ -4,6 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -76,7 +80,7 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
-		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
@@ -283,62 +287,31 @@ func Cleanup(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// RunMigration creates the articles table if not exists.
+// RunMigration applies versioned SQL files from the migrations directory.
 func RunMigration(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-CREATE TABLE IF NOT EXISTS articles (
-    id           SERIAL PRIMARY KEY,
-    source_url   TEXT UNIQUE NOT NULL,
-	url_hash     TEXT,
-	title_hash   TEXT,
-    content_hash TEXT NOT NULL,
-    title_raw    TEXT NOT NULL,
-    title_ua     TEXT,
-    body_ua      TEXT,
-	video_url    TEXT,
-    image_url    TEXT,
-    source_name  TEXT NOT NULL,
-    source_type  TEXT NOT NULL DEFAULT 'media',
-		  article_type TEXT NOT NULL DEFAULT 'news',
-    score        INT DEFAULT 0,
-    posted_tg    BOOLEAN DEFAULT FALSE,
-	status       TEXT NOT NULL DEFAULT 'pending',
-    ai_provider  TEXT,
-    published_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
-);
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS url_hash TEXT;
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS title_hash TEXT;
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT;
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS video_url TEXT;
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS article_type TEXT;
-UPDATE articles SET article_type='news' WHERE article_type IS NULL OR article_type='';
-ALTER TABLE articles ALTER COLUMN article_type SET DEFAULT 'news';
-ALTER TABLE articles ALTER COLUMN article_type SET NOT NULL;
-UPDATE articles SET status='published' WHERE posted_tg=TRUE AND (status IS NULL OR status='');
-UPDATE articles SET status='pending' WHERE posted_tg=FALSE AND (status IS NULL OR status='');
-ALTER TABLE articles ALTER COLUMN status SET DEFAULT 'pending';
-ALTER TABLE articles ALTER COLUMN status SET NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_articles_posted_tg    ON articles(posted_tg);
-CREATE INDEX IF NOT EXISTS idx_articles_status       ON articles(status);
-CREATE INDEX IF NOT EXISTS idx_articles_created_at   ON articles(created_at);
-CREATE INDEX IF NOT EXISTS idx_articles_content_hash ON articles(content_hash);
-CREATE INDEX IF NOT EXISTS idx_articles_score        ON articles(score DESC);
-CREATE INDEX IF NOT EXISTS idx_articles_article_type ON articles(article_type);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_url_hash_unique ON articles(url_hash) WHERE url_hash IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_articles_title_hash ON articles(title_hash);
-CREATE TABLE IF NOT EXISTS moderation_edit_sessions (
-	chat_id            BIGINT NOT NULL,
-	user_id            BIGINT NOT NULL,
-	article_id         INT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-	preview_message_id INT NOT NULL,
-	created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-	updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-	PRIMARY KEY (chat_id, user_id)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_moderation_edit_sessions_article_id ON moderation_edit_sessions(article_id);
-`)
-	return err
+	paths, err := filepath.Glob(filepath.Join("migrations", "*.sql"))
+	if err != nil {
+		return fmt.Errorf("list migrations: %w", err)
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("no migration files found in %s", filepath.Join("migrations", "*.sql"))
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", path, err)
+		}
+		sqlText := strings.TrimSpace(string(raw))
+		if sqlText == "" {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, sqlText); err != nil {
+			return fmt.Errorf("apply migration %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 // ListPublishedArticles returns latest published articles for the web archive.
@@ -351,7 +324,7 @@ func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) (
 	}
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles
@@ -412,7 +385,7 @@ func CountPublishedArticles(ctx context.Context, db *sql.DB) (int, error) {
 func GetPublishedArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
-		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), content_hash, title_raw, COALESCE(title_ua, ''),
+		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
 		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
 		FROM articles

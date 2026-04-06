@@ -155,9 +155,9 @@ func main() {
 
 func fetchArticleStatusStats(ctx context.Context, database *sql.DB) (map[string]int, error) {
 	rows, err := database.QueryContext(ctx, `
-		SELECT status, COUNT(*)
+		SELECT COALESCE(status, $1) AS status, COUNT(*)
 		FROM articles
-		GROUP BY status`)
+		GROUP BY COALESCE(status, $1)`, db.StatusPending)
 	if err != nil {
 		return nil, fmt.Errorf("query status stats: %w", err)
 	}

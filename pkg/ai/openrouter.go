@@ -11,19 +11,12 @@ import (
 	"time"
 )
 
-// Free tier: 20 RPM, 200 req/day (no credit card).
-// Fallback chain: DeepSeek V3 first (stronger model, better Ukrainian),
-// then Llama 3.3 70B if DeepSeek is unavailable.
-// Both excluded from training opt-out — pick your geopolitics 🙂
-var openRouterModels = []string{
-	"deepseek/deepseek-chat:free",            // DeepSeek V3 — безкоштовний
-	"meta-llama/llama-3.3-70b-instruct:free", // Llama 3.3 70B — резерв
-}
+const defaultOpenRouterModel = "google/gemma-2-9b-it:free"
 
 // OpenRouterProvider calls OpenRouter as fallback AI.
 type OpenRouterProvider struct {
 	apiKey     string
-	models     []string
+	model      string
 	httpClient *http.Client
 }
 
@@ -31,17 +24,17 @@ type OpenRouterProvider struct {
 func NewOpenRouterProvider(apiKey string) *OpenRouterProvider {
 	return &OpenRouterProvider{
 		apiKey:     apiKey,
-		models:     append([]string(nil), openRouterModels...),
+		model:      defaultOpenRouterModel,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 // NewOpenRouterProviderWithModel creates an OpenRouter provider with one configured model.
-// If model is empty, it falls back to the default internal free-model chain.
+// If model is empty, it falls back to the default free model.
 func NewOpenRouterProviderWithModel(apiKey, model string) *OpenRouterProvider {
 	p := NewOpenRouterProvider(apiKey)
-	if strings.TrimSpace(model) != "" {
-		p.models = []string{strings.TrimSpace(model)}
+	if m := strings.TrimSpace(model); m != "" {
+		p.model = m
 	}
 	return p
 }
@@ -49,16 +42,11 @@ func NewOpenRouterProviderWithModel(apiKey, model string) *OpenRouterProvider {
 func (o *OpenRouterProvider) Name() string { return "openrouter-free" }
 
 func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	var lastErr error
-	for _, model := range o.models {
-		result, err := o.callModel(ctx, model, prompt)
-		if err != nil {
-			lastErr = err
-			continue // try next model
-		}
-		return strings.TrimSpace(result), nil
+	result, err := o.callModel(ctx, o.model, prompt)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("all openrouter models failed: %w", lastErr)
+	return strings.TrimSpace(result), nil
 }
 
 func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {

@@ -15,7 +15,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/deuswork/nintendoflow/pkg/ai"
-	"github.com/deuswork/nintendoflow/pkg/cleaner"
 	"github.com/deuswork/nintendoflow/pkg/config"
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/dedup"
@@ -102,7 +101,11 @@ func main() {
 		}
 
 		// -- 3. DB cleanup -----------------------------------------------------
-		cleaner.Run(ctx, database)
+		if err := db.Cleanup(ctx, database); err != nil {
+			slog.Warn("cleanup failed", "error", err)
+		} else {
+			slog.Info("db cleanup: removed articles older than 30 days")
+		}
 	}
 	logStage("db", stageStart, runStart)
 	stageStart = time.Now()
@@ -129,7 +132,7 @@ func main() {
 	stageStart = time.Now()
 
 	// -- 5. Fetch RSS (parallel, 30s timeout) ------------------------------
-	fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	fetchCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
 	defer cancel()
 
 	items := fetcher.FetchAll(fetchCtx, feeds)
