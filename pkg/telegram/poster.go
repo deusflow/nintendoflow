@@ -84,7 +84,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 	if videoURL != "" {
 		extra = "🎥 Відео: " + videoURL
 	}
-	
+
 	photo := tgbotapi.PhotoConfig{
 		BaseFile: tgbotapi.BaseFile{
 			BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
