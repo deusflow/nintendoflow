@@ -170,18 +170,36 @@ func buildCaption(article *db.Article, maxLen int) string {
 	}
 
 	body := stripSourceFooter(article.BodyUA)
-	full := prefix + body
-	runes := []rune(full)
-	if len(runes) <= maxLen {
-		return full
+
+	// Create clickable source link
+	sourceLink := ""
+	if strings.TrimSpace(article.SourceURL) != "" {
+		sourceName := article.SourceName
+		if sourceName == "" {
+			sourceName = "Джерело"
+		}
+		sourceLink = fmt.Sprintf("\n\n🔗 <a href=\"%s\"><b>%s</b></a>", escapeHTML(article.SourceURL), escapeHTML(sourceName))
 	}
 
-	bodyRunes := []rune(body)
-	allowed := maxLen - len([]rune(prefix)) - 3
-	if allowed > 0 && allowed < len(bodyRunes) {
-		return prefix + string(bodyRunes[:allowed]) + "..."
+	full := prefix + body
+	// Leave space for the source link and ellipsis
+	reserve := len([]rune(sourceLink)) + 3
+
+	runes := []rune(full)
+	var finalBody string
+	if len(runes) <= maxLen-reserve {
+		finalBody = full
+	} else {
+		bodyRunes := []rune(body)
+		allowed := maxLen - reserve - len([]rune(prefix))
+		if allowed > 0 && allowed < len(bodyRunes) {
+			finalBody = prefix + string(bodyRunes[:allowed]) + "..."
+		} else {
+			finalBody = string(runes[:maxLen-reserve]) + "..."
+		}
 	}
-	return string(runes[:maxLen])
+
+	return finalBody + sourceLink
 }
 
 // stripSourceFooter removes stray inline-link lines (🔗) left from older
