@@ -127,25 +127,35 @@ func EditModerationWaitingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID 
 }
 
 func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string, markup *tgbotapi.InlineKeyboardMarkup) error {
-	edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
-	edit.ParseMode = "HTML"
+	captionEdit := tgbotapi.NewEditMessageCaption(chatID, messageID, text)
+	captionEdit.ParseMode = "HTML"
 	if markup != nil {
-		edit.ReplyMarkup = markup
+		captionEdit.ReplyMarkup = markup
 	}
-	_, err := bot.Send(edit)
-	if err != nil {
+	if _, err := bot.Send(captionEdit); err == nil {
+		return nil
+	} else {
+		slog.Debug("telegram edit caption failed, fallback to text",
+			"chat_id", chatID,
+			"message_id", messageID,
+			"error", err,
+		)
+	}
+
+	textEdit := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	textEdit.ParseMode = "HTML"
+	if markup != nil {
+		textEdit.ReplyMarkup = markup
+	}
+	if _, err := bot.Send(textEdit); err != nil {
 		return fmt.Errorf("telegram edit message: %w", err)
 	}
 	return nil
 }
 
 func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
-	edit := tgbotapi.NewEditMessageText(chatID, messageID, buildModerationPreviewText(article))
-	edit.ParseMode = "HTML"
 	markup := moderationKeyboard(article.ID)
-	edit.ReplyMarkup = &markup
-	_, err := bot.Send(edit)
-	if err != nil {
+	if err := editModerationMessage(bot, chatID, messageID, buildModerationPreviewText(article), &markup); err != nil {
 		return fmt.Errorf("telegram edit moderation preview: %w", err)
 	}
 	return nil

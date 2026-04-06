@@ -140,10 +140,6 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	}
 	defer func() { _ = database.Close() }()
 
-	if err := db.RunMigration(ctx, database); err != nil {
-		return fmt.Errorf("migration: %w", err)
-	}
-
 	bot, err := tgbotapi.NewBotAPI(testToken)
 	if err != nil {
 		return fmt.Errorf("bot api init: %w", err)
@@ -286,10 +282,6 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 		return fmt.Errorf("db connect: %w", err)
 	}
 	defer func() { _ = database.Close() }()
-
-	if err := db.RunMigration(ctx, database); err != nil {
-		return fmt.Errorf("migration: %w", err)
-	}
 
 	slog.Info("handleEditMessage: looking up edit session",
 		"chat_id", chatID,

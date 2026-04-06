@@ -61,20 +61,20 @@ topics:
     keywords:
       # Технічний потенціал і розкриття можливостей
       - word: "architecture" # архитектура консоли
-      - role: tech
-      - weight: 85
+        role: tech
+        weight: 85
       - word: "teraflops" # единица мощности
-      - role: tech
-      - weight: 85
+        role: tech
+        weight: 85
       - word: "nvidia" # производитель железа
-      - role: tech
-      - weight: 80
+        role: tech
+        weight: 80
       - word: "dlss" # технология улучшения графики
-      - role: tech
-      - weight: 85
+        role: tech
+        weight: 85
       - word: "clock speed" # частота процессора
-      - role: tech
-      - weight: 80
+        role: tech
+        weight: 80
       - word: "developer insight"
         role: tech
         weight: 75

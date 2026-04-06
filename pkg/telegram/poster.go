@@ -16,11 +16,14 @@ import (
 // PostArticle sends an article to the Telegram channel.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
 func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
-	if article.VideoURL != "" {
+	videoURL := strings.TrimSpace(article.VideoURL)
+	imageURL := strings.TrimSpace(article.ImageURL)
+
+	if videoURL != "" {
 		video := tgbotapi.VideoConfig{
 			BaseFile: tgbotapi.BaseFile{
 				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
-				File:     tgbotapi.FileURL(article.VideoURL),
+				File:     tgbotapi.FileURL(videoURL),
 			},
 			Caption:   buildCaption(&article, 1024),
 			ParseMode: "HTML",
@@ -32,32 +35,19 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 				"mode", "publish",
 				"step", "send_video",
 				"article_id", article.ID,
-				"video_url", article.VideoURL,
-				"error", err,
-			)
-		}
-
-		// YouTube page URLs can fail in sendVideo because they are not direct file URLs.
-		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
-			return nil
-		} else {
-			slog.Warn("telegram publish media fallback failed",
-				"mode", "publish",
-				"step", "send_text_with_video_link",
-				"article_id", article.ID,
-				"video_url", article.VideoURL,
+				"video_url", videoURL,
 				"error", err,
 			)
 		}
 	}
 
-	if article.ImageURL != "" {
+	if imageURL != "" {
 		photo := tgbotapi.PhotoConfig{
 			BaseFile: tgbotapi.BaseFile{
 				BaseChat: tgbotapi.BaseChat{
 					ChannelUsername: channelID,
 				},
-				File: tgbotapi.FileURL(article.ImageURL),
+				File: tgbotapi.FileURL(imageURL),
 			},
 			Caption:   buildCaption(&article, 1024),
 			ParseMode: "HTML",
@@ -67,14 +57,30 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 				"mode", "publish",
 				"step", "send_photo",
 				"article_id", article.ID,
-				"image_url", article.ImageURL,
+				"image_url", imageURL,
 				"error", err,
 			)
-			// fallback to text-only
-			return sendText(bot, channelID, article)
+			// Continue to text/video-link fallback below.
+		} else {
+			return nil
 		}
-		return nil
 	}
+
+	if videoURL != "" {
+		// YouTube page URLs often fail in sendVideo because they are not direct file URLs.
+		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
+			return nil
+		} else {
+			slog.Warn("telegram publish media fallback failed",
+				"mode", "publish",
+				"step", "send_text_with_video_link",
+				"article_id", article.ID,
+				"video_url", videoURL,
+				"error", err,
+			)
+		}
+	}
+
 	return sendText(bot, channelID, article)
 }
 
