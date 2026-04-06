@@ -19,7 +19,37 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 	videoURL := strings.TrimSpace(article.VideoURL)
 	imageURL := strings.TrimSpace(article.ImageURL)
 
+	// If there is no image and no video, use a fallback image based on article type.
+	if imageURL == "" && videoURL == "" {
+		imageURL = getFallbackImageURL(article.ArticleType)
+	}
+
+	// If we have an image (or fallback image), but no video, send as Photo.
+	// If we have BOTH an image and a video, we prioritize the video link preview for YouTube.
+	if videoURL == "" && imageURL != "" {
+		photo := tgbotapi.PhotoConfig{
+			BaseFile: tgbotapi.BaseFile{
+				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+				File:     tgbotapi.FileURL(imageURL),
+			},
+			Caption:   buildCaption(&article, 1024),
+			ParseMode: "HTML",
+		}
+		if _, err := bot.Send(photo); err == nil {
+			return nil
+		} else {
+			slog.Warn("telegram publish send photo failed",
+				"mode", "publish",
+				"article_id", article.ID,
+				"image_url", imageURL,
+				"error", err,
+			)
+			// fallback to text below
+		}
+	}
+
 	if videoURL != "" {
+		// First try sending as native video (if it's a direct mp4)
 		video := tgbotapi.VideoConfig{
 			BaseFile: tgbotapi.BaseFile{
 				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
@@ -30,50 +60,14 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 		}
 		if _, err := bot.Send(video); err == nil {
 			return nil
-		} else {
-			slog.Warn("telegram publish media send failed",
-				"mode", "publish",
-				"step", "send_video",
-				"article_id", article.ID,
-				"video_url", videoURL,
-				"error", err,
-			)
 		}
-	}
 
-	if imageURL != "" {
-		photo := tgbotapi.PhotoConfig{
-			BaseFile: tgbotapi.BaseFile{
-				BaseChat: tgbotapi.BaseChat{
-					ChannelUsername: channelID,
-				},
-				File: tgbotapi.FileURL(imageURL),
-			},
-			Caption:   buildCaption(&article, 1024),
-			ParseMode: "HTML",
-		}
-		if _, err := bot.Send(photo); err != nil {
-			slog.Warn("telegram publish media send failed",
-				"mode", "publish",
-				"step", "send_photo",
-				"article_id", article.ID,
-				"image_url", imageURL,
-				"error", err,
-			)
-			// Continue to text/video-link fallback below.
-		} else {
-			return nil
-		}
-	}
-
-	if videoURL != "" {
-		// YouTube page URLs often fail in sendVideo because they are not direct file URLs.
+		// If native video failed (e.g. YouTube), send as a text message with LinkPreview.
 		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
 			return nil
 		} else {
-			slog.Warn("telegram publish media fallback failed",
+			slog.Warn("telegram publish send video link fallback failed",
 				"mode", "publish",
-				"step", "send_text_with_video_link",
 				"article_id", article.ID,
 				"video_url", videoURL,
 				"error", err,
@@ -81,16 +75,37 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 		}
 	}
 
+	// Last resort: just send text
 	return sendText(bot, channelID, article)
+}
+
+func getFallbackImageURL(articleType string) string {
+	baseURL := "https://deusflow.github.io/nintendoflow/assets/placeholders"
+	switch articleType {
+	case "insight", "инсайт":
+		return baseURL + "/news-fallback-16x9.webp"
+	case "news", "новость", "факт":
+		return baseURL + "/newstwo-fallback-16x9.webp"
+	case "rumor", "слух", "слухи", "чутка":
+		return baseURL + "/card-fallback-16x9.webp"
+	case "offtop":
+		return baseURL + "/offtop-fallback-16x9.webp"
+	default:
+		return baseURL + "/newstwo-fallback-16x9.webp"
+	}
 }
 
 func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
 	caption := buildCaption(&article, 3800)
 	videoURL := strings.TrimSpace(article.VideoURL)
-	text := caption + "\n\n" + videoURL
 
-	// tgbotapi v5 does not expose LinkPreviewOptions, so send raw API payload.
+	// Create an invisible link to the video if we don't want it to clutter the text,
+	// BUT since zero-width spaces fail in some Telegram clients, we just append it
+	// clearly at the bottom.
+	text := caption + "\n\n<a href=\"" + escapeHTML(videoURL) + "\">🎥 Відео до новини</a>"
+
 	type linkPreviewOptions struct {
+		IsDisabled       bool   `json:"is_disabled"`
 		URL              string `json:"url"`
 		PreferLargeMedia bool   `json:"prefer_large_media"`
 		ShowAboveText    bool   `json:"show_above_text"`
@@ -107,6 +122,7 @@ func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Ar
 		Text:      text,
 		ParseMode: "HTML",
 		LinkPreviewOptions: linkPreviewOptions{
+			IsDisabled:       false,
 			URL:              videoURL,
 			PreferLargeMedia: true,
 			ShowAboveText:    true,

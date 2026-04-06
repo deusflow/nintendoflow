@@ -27,7 +27,10 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	markup := moderationKeyboard(article.ID)
 
 	previewImage := strings.TrimSpace(article.ImageURL)
-	if previewImage == "" {
+	if previewImage == "" && strings.TrimSpace(article.VideoURL) == "" {
+		// Use the same fallback images as PostArticle
+		previewImage = getFallbackImageURL(article.ArticleType)
+	} else if previewImage == "" {
 		previewImage = youtubeThumbnailURL(article.VideoURL)
 	}
 
