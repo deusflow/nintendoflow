@@ -59,7 +59,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	}
 
 	if strings.TrimSpace(article.VideoURL) != "" {
-		text = fmt.Sprintf("%s\n\n%s", text, strings.TrimSpace(article.VideoURL))
+		text = fmt.Sprintf("%s\n\n🔗 %s", text, strings.TrimSpace(article.VideoURL))
 	}
 
 	msg, err := newTextMessage(chatID, text)

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,63 +20,86 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 	videoURL := strings.TrimSpace(article.VideoURL)
 	imageURL := strings.TrimSpace(article.ImageURL)
 
-	// If there is no image and no video, use a fallback image based on article type.
-	if imageURL == "" && videoURL == "" {
+	// Ensure an image exists if all video uploads fail
+	if imageURL == "" {
 		imageURL = getFallbackImageURL(article.ArticleType)
 	}
 
-	// If we have an image (or fallback image), but no video, send as Photo.
-	// If we have BOTH an image and a video, we prioritize the video link preview for YouTube.
-	if videoURL == "" && imageURL != "" {
-		photo := tgbotapi.PhotoConfig{
-			BaseFile: tgbotapi.BaseFile{
-				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
-				File:     tgbotapi.FileURL(imageURL),
-			},
-			Caption:   buildCaption(&article, 1024),
-			ParseMode: "HTML",
-		}
-		if _, err := bot.Send(photo); err == nil {
-			return nil
-		} else {
-			slog.Warn("telegram publish send photo failed",
-				"mode", "publish",
-				"article_id", article.ID,
-				"image_url", imageURL,
-				"error", err,
-			)
-			// fallback to text below
-		}
-	}
-
+	// --- SCENARIO A: WE HAVE A VIDEO ---
 	if videoURL != "" {
-		// First try sending as native video (if it's a direct mp4)
-		video := tgbotapi.VideoConfig{
-			BaseFile: tgbotapi.BaseFile{
-				BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
-				File:     tgbotapi.FileURL(videoURL),
-			},
-			Caption:   buildCaption(&article, 1024),
-			ParseMode: "HTML",
-		}
-		if _, err := bot.Send(video); err == nil {
-			return nil
+		// 1. Try to send as actual Native Video
+		if strings.Contains(videoURL, "youtube.com") || strings.Contains(videoURL, "youtu.be") {
+			// Try to download and stream to Telegram
+			stream, size, err := getYouTubeStream(context.Background(), videoURL)
+			if err == nil {
+				// Telegram bot API limits local files to 50MB
+				if size < 49*1024*1024 {
+					video := tgbotapi.VideoConfig{
+						BaseFile: tgbotapi.BaseFile{
+							BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
+						},
+						Caption:   buildCaption(&article, 1024, ""),
+						ParseMode: "HTML",
+					}
+					_, errSend := bot.Send(video)
+					stream.Close()
+					if errSend == nil {
+						return nil
+					} else {
+						slog.Warn("youtube video upload failed, fallback to embed", "article_id", article.ID, "error", errSend)
+					}
+				} else {
+					stream.Close()
+					slog.Info("youtube video too large, fallback to embed", "article_id", article.ID, "size", size)
+				}
+			} else {
+				slog.Warn("youtube download failed, fallback to embed", "error", err)
+			}
+		} else {
+			// Non-youtube video (direct remote URL mp4)
+			video := tgbotapi.VideoConfig{
+				BaseFile: tgbotapi.BaseFile{
+					BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+					File:     tgbotapi.FileURL(videoURL),
+				},
+				Caption:   buildCaption(&article, 1024, ""),
+				ParseMode: "HTML",
+			}
+			if _, err := bot.Send(video); err == nil {
+				return nil
+			}
 		}
 
-		// If native video failed (e.g. YouTube), send as a text message with LinkPreview.
+		// 2. Native Video Failed -> Fallback to Embed (Second Best for Videos: beautiful YouTube player!)
 		if err := sendTextWithVideoLink(bot, channelID, article); err == nil {
 			return nil
 		} else {
-			slog.Warn("telegram publish send video link fallback failed",
-				"mode", "publish",
-				"article_id", article.ID,
-				"video_url", videoURL,
-				"error", err,
-			)
+			slog.Warn("telegram video embed failed, fallback to photo", "error", err)
 		}
 	}
 
-	// Last resort: just send text
+	// --- SCENARIO B: NO VIDEO, OR VIDEO EMBED FAILED. Send as Photo ---
+	var extra string
+	if videoURL != "" {
+		extra = "🎥 Відео: " + videoURL
+	}
+	
+	photo := tgbotapi.PhotoConfig{
+		BaseFile: tgbotapi.BaseFile{
+			BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+			File:     tgbotapi.FileURL(imageURL),
+		},
+		Caption:   buildCaption(&article, 1024, extra),
+		ParseMode: "HTML",
+	}
+	if _, err := bot.Send(photo); err == nil {
+		return nil
+	} else {
+		slog.Warn("telegram publish send photo failed", "article_id", article.ID, "image", imageURL, "error", err)
+	}
+
+	// --- SCENARIO C: ABSOLUTE LAST RESORT ---
 	return sendText(bot, channelID, article)
 }
 
@@ -96,13 +120,9 @@ func getFallbackImageURL(articleType string) string {
 }
 
 func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
-	caption := buildCaption(&article, 3800)
 	videoURL := strings.TrimSpace(article.VideoURL)
-
-	// Create an invisible link to the video if we don't want it to clutter the text,
-	// BUT since zero-width spaces fail in some Telegram clients, we just append it
-	// clearly at the bottom.
-	text := caption + "\n\n<a href=\"" + escapeHTML(videoURL) + "\">🎥 Відео до новини</a>"
+	extra := "🎥 Відео: " + videoURL
+	text := buildCaption(&article, 3800, extra)
 
 	type linkPreviewOptions struct {
 		IsDisabled       bool   `json:"is_disabled"`
@@ -147,7 +167,7 @@ func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Ar
 }
 
 func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
-	msg := tgbotapi.NewMessageToChannel(channelID, buildCaption(&article, 4096))
+	msg := tgbotapi.NewMessageToChannel(channelID, buildCaption(&article, 4096, ""))
 	msg.ParseMode = "HTML"
 	if _, err := bot.Send(msg); err != nil {
 		return fmt.Errorf("telegram sendMessage: %w", err)
@@ -156,7 +176,7 @@ func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error 
 }
 
 // buildCaption forms the final post text based on source type.
-func buildCaption(article *db.Article, maxLen int) string {
+func buildCaption(article *db.Article, maxLen int, appendExtra string) string {
 	var prefix string
 	switch article.SourceType {
 	case "official":
@@ -178,12 +198,18 @@ func buildCaption(article *db.Article, maxLen int) string {
 		if sourceName == "" {
 			sourceName = "Джерело"
 		}
-		sourceLink = fmt.Sprintf("\n\n🔗 <a href=\"%s\"><b>%s</b></a>", escapeHTML(article.SourceURL), escapeHTML(sourceName))
+		sourceLink = fmt.Sprintf("\n\n🔗 Джерело: <a href=\"%s\"><b>%s</b></a>", escapeHTML(article.SourceURL), escapeHTML(sourceName))
 	}
 
 	full := prefix + body
+
+	// Add a little extra spacing before extra material if any
+	if appendExtra != "" {
+		appendExtra = "\n\n" + appendExtra
+	}
+
 	// Leave space for the source link and ellipsis
-	reserve := len([]rune(sourceLink)) + 3
+	reserve := len([]rune(sourceLink)) + len([]rune(appendExtra)) + 3
 
 	runes := []rune(full)
 	var finalBody string
@@ -199,7 +225,7 @@ func buildCaption(article *db.Article, maxLen int) string {
 		}
 	}
 
-	return finalBody + sourceLink
+	return finalBody + appendExtra + sourceLink
 }
 
 // stripSourceFooter removes stray inline-link lines (🔗) left from older
