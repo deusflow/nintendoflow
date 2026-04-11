@@ -5,6 +5,8 @@
 *.test
 *.out
 /export
+/bot
+
 
 # Dependency directories (remove the comment below if you use Go modules)
 /vendor/
