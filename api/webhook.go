@@ -254,6 +254,7 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	userID := int64(message.From.ID)
 	msgID := message.MessageID
 	text := strings.TrimSpace(message.Text)
+	text = sanitizeEditedBody(text)
 
 	slog.Info("handleEditMessage: processing text message",
 		"chat_id", chatID,
@@ -519,4 +520,31 @@ func sendEditAck(bot *tgbotapi.BotAPI, chatID int64, replyTo int, text string) e
 		return fmt.Errorf("telegram send edit ack: %w", err)
 	}
 	return nil
+}
+
+func sanitizeEditedBody(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if lower == "preview" || strings.HasPrefix(lower, "title:") || strings.HasPrefix(lower, "source:") || strings.HasPrefix(lower, "score:") {
+			continue
+		}
+		if strings.HasPrefix(lower, "<b>title:</b>") || strings.HasPrefix(lower, "<b>source:</b>") || strings.HasPrefix(lower, "<b>score:</b>") {
+			continue
+		}
+		if strings.Contains(lower, "original link") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	clean := strings.TrimSpace(strings.Join(kept, "\n"))
+	if strings.HasPrefix(strings.ToLower(clean), "<b>preview</b>") {
+		clean = strings.TrimSpace(strings.TrimPrefix(clean, "<b>Preview</b>"))
+	}
+	return clean
 }

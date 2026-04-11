@@ -319,14 +319,15 @@ func main() {
 	if cleanBody == "" {
 		cleanBody = rewritten
 	}
+	cleanBody = sanitizeGeneratedBody(cleanBody)
 
 	hypeCount := calculateHype(selected.item, items)
 	var hypeText string
 	if hypeCount > 3 {
 		hypeText = fmt.Sprintf("\n\n🔥 <i>Цю подію обговорюють у %d інших джерелах</i>", hypeCount)
-	} else if hypeCount == 1 {
+	} else if hypeCount == 1 && isExclusiveWorthy(selected, articleType) {
 		hypeText = "\n\n💎 <i>Ексклюзив (знайдено лише тут)</i>"
-	} else {
+	} else if hypeCount > 1 {
 		hypeText = fmt.Sprintf("\n\n🔥 <i>Знайдено у %d джерелах</i>", hypeCount)
 	}
 	cleanBody += hypeText
@@ -464,6 +465,22 @@ func buildSelectorPrompt(candidates []candidate) string {
 
 var numberRe = regexp.MustCompile(`\d+`)
 
+var fillerPhraseReplacer = strings.NewReplacer(
+	"Час покаже", "",
+	"час покаже", "",
+	"Подивимось", "",
+	"подивимось", "",
+	"Побачимо", "",
+	"побачимо", "",
+)
+
+var emptyQuestionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)чи\s+чекаєте\s+ви[^?.!]*[?.!]`),
+	regexp.MustCompile(`(?i)чи\s+стане\s+це\s+хітом[^?.!]*[?.!]`),
+}
+
+var excessiveNewlinesRe = regexp.MustCompile(`\n{3,}`)
+
 func parseSelectedIndex(raw string, count int) (int, bool) {
 	match := numberRe.FindString(raw)
 	if match == "" {
@@ -474,6 +491,31 @@ func parseSelectedIndex(raw string, count int) (int, bool) {
 		return 0, false
 	}
 	return n - 1, true
+}
+
+func sanitizeGeneratedBody(body string) string {
+	clean := fillerPhraseReplacer.Replace(body)
+	for _, re := range emptyQuestionPatterns {
+		clean = re.ReplaceAllString(clean, "")
+	}
+	clean = strings.ReplaceAll(clean, " .", ".")
+	clean = excessiveNewlinesRe.ReplaceAllString(clean, "\n\n")
+	return strings.TrimSpace(clean)
+}
+
+func isExclusiveWorthy(c candidate, articleType string) bool {
+	if c.score < 170 {
+		return false
+	}
+	sourceType := strings.ToLower(strings.TrimSpace(c.item.SourceType))
+	if sourceType == "aggregator" {
+		return false
+	}
+	t := ai.NormalizeArticleType(articleType)
+	if t == ai.ArticleTypeRumor || t == ai.ArticleTypeOfftop {
+		return false
+	}
+	return true
 }
 
 func fallbackImageForType(articleType string) string {

@@ -235,10 +235,22 @@ func stripSourceFooter(body string) string {
 	kept := make([]string, 0, len(lines))
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
 		if strings.HasPrefix(trimmed, "🔗") {
+			continue
+		}
+		if lower == "preview" || strings.HasPrefix(lower, "title:") || strings.HasPrefix(lower, "source:") || strings.HasPrefix(lower, "score:") {
+			continue
+		}
+		if strings.HasPrefix(lower, "<b>title:</b>") || strings.HasPrefix(lower, "<b>source:</b>") || strings.HasPrefix(lower, "<b>score:</b>") {
+			continue
+		}
+		if strings.Contains(lower, "original link") {
 			continue
 		}
 		kept = append(kept, line)
 	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
+	clean := strings.TrimSpace(strings.Join(kept, "\n"))
+	clean = strings.TrimPrefix(clean, "<b>Preview</b>")
+	return strings.TrimSpace(clean)
 }
