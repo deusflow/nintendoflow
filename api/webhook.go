@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,12 +12,42 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+var (
+	_dbOnce sync.Once
+	_db     *sql.DB
+	_dbErr  error
+
+	_botOnce sync.Once // ← добавить
+	_bot     *tgbotapi.BotAPI
+	_botErr  error
+)
+
+func getDB(dsn string) (*sql.DB, error) {
+	_dbOnce.Do(func() {
+		_db, _dbErr = db.Connect(dsn)
+		if _dbErr == nil {
+			_db.SetMaxOpenConns(3)
+			_db.SetMaxIdleConns(1)
+			_db.SetConnMaxLifetime(30 * time.Second)
+		}
+	})
+	return _db, _dbErr
+}
+
+func getBot(token string) (*tgbotapi.BotAPI, error) {
+	_botOnce.Do(func() {
+		_bot, _botErr = tgbotapi.NewBotAPI(token)
+	})
+	return _bot, _botErr
+}
 
 const editSessionTTL = 30 * time.Minute
 
@@ -27,13 +58,16 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secretToken := strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_SECRET"))
-	if secretToken != "" {
-		received := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
-		if received != secretToken {
-			slog.Warn("webhook: forbidden — secret token mismatch")
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
+	if secretToken == "" {
+		slog.Error("webhook: TELEGRAM_WEBHOOK_SECRET is not set — refusing all requests")
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	received := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+	if subtle.ConstantTimeCompare([]byte(received), []byte(secretToken)) != 1 {
+		slog.Warn("webhook: forbidden — secret token mismatch")
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
 	}
 
 	var update tgbotapi.Update
@@ -134,13 +168,12 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 
-	database, err := db.Connect(dsn)
+	database, err := getDB(dsn)
 	if err != nil {
 		return fmt.Errorf("db connect: %w", err)
 	}
-	defer func() { _ = database.Close() }()
 
-	bot, err := tgbotapi.NewBotAPI(testToken)
+	bot, err := getBot(testToken)
 	if err != nil {
 		return fmt.Errorf("bot api init: %w", err)
 	}
@@ -278,11 +311,10 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 
-	database, err := db.Connect(dsn)
+	database, err := getDB(dsn)
 	if err != nil {
 		return fmt.Errorf("db connect: %w", err)
 	}
-	defer func() { _ = database.Close() }()
 
 	slog.Info("handleEditMessage: looking up edit session",
 		"chat_id", chatID,
@@ -310,7 +342,7 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 		"session_user_id", session.UserID,
 	)
 
-	bot, err := tgbotapi.NewBotAPI(testToken)
+	bot, err := getBot(testToken)
 	if err != nil {
 		return fmt.Errorf("bot api init: %w", err)
 	}
