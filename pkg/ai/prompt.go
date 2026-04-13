@@ -13,7 +13,7 @@ type NewsInput struct {
 }
 
 // sanitize убирает потенциальные prompt injection из пользовательских данных.
-func sanitize(s string) string {
+func sanitizeInput(s string) string {
 	dangerous := []string{
 		"=== ", "ЗАВДАННЯ", "ІНСТРУКЦ", "SKIP", "TYPE:",
 		"ignore previous", "forget instructions",
@@ -108,8 +108,8 @@ func BuildPrompt(in NewsInput) string {
 	return fmt.Sprintf(
 		promptTemplate,
 		styleGuide,
-		sanitize(in.Title),
-		sanitize(in.Body),
-		sanitize(in.Source),
+		sanitizeInput(in.Title),
+		sanitizeInput(in.Body),
+		sanitizeInput(in.Source),
 	)
 }
