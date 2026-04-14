@@ -9,10 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+var telegramHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 // PostArticle sends an article to the Telegram channel.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
@@ -153,7 +156,7 @@ func sendTextWithVideoLink(bot *tgbotapi.BotAPI, channelID string, article db.Ar
 	}
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", bot.Token)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	resp, err := telegramHTTPClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("telegram sendMessage with video link: %w", err)
 	}
@@ -175,7 +178,7 @@ func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error 
 	return nil
 }
 
-// buildCaption forms the final post text based on source type.
+// buildCaption forms the final post text based on source and article type.
 func buildCaption(article *db.Article, maxLen int, appendExtra string) string {
 	var prefix string
 	switch article.SourceType {
@@ -183,10 +186,14 @@ func buildCaption(article *db.Article, maxLen int, appendExtra string) string {
 		prefix = "📢 <b>ОФІЦІЙНО</b>\n\n"
 	case "insider":
 		prefix = "🕵️ <i>Інсайд</i>\n\n"
-	case "aggregator":
-		prefix = "📡 <i>Чутки</i>\n\n"
 	default:
-		prefix = ""
+		// For aggregators and other sources, use the AI-determined article type.
+		switch article.ArticleType {
+		case "rumor":
+			prefix = "🤫 <i>Чутки</i>\n\n"
+		case "insight":
+			prefix = "🔍 <i>Інсайт</i>\n\n"
+		}
 	}
 
 	body := stripSourceFooter(article.BodyUA)

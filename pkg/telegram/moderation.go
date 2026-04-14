@@ -213,13 +213,40 @@ func buildModerationPreviewText(article db.Article) string {
 	if len(bodyRunes) > 700 {
 		body = string(bodyRunes[:700]) + "..."
 	}
-	return fmt.Sprintf("<b>Preview</b>\n\n<b>Title:</b> %s\n<b>Source:</b> %s\n<b>Score:</b> %d\n\n%s\n\n<a href=\"%s\">Original link</a>",
+
+	typeLabel := articleTypeLabel(article.ArticleType)
+
+	mediaHint := ""
+	if strings.TrimSpace(article.VideoURL) != "" {
+		mediaHint = " 🎥"
+	} else if strings.TrimSpace(article.ImageURL) != "" {
+		mediaHint = " 🖼️"
+	}
+
+	// body is already AI-generated HTML — do NOT escape it.
+	return fmt.Sprintf(
+		"<b>Preview</b>%s\n\n<b>Title:</b> %s\n<b>Source:</b> %s · %s · <b>%d pts</b>\n\n%s\n\n<a href=\"%s\">Original link</a>",
+		mediaHint,
 		escapeHTML(article.TitleRaw),
 		escapeHTML(article.SourceName),
+		typeLabel,
 		article.Score,
-		escapeHTML(body),
+		body,
 		escapeHTML(article.SourceURL),
 	)
+}
+
+func articleTypeLabel(t string) string {
+	switch t {
+	case "insight":
+		return "🔍 інсайт"
+	case "rumor":
+		return "🤫 чутки"
+	case "offtop":
+		return "💬 офтоп"
+	default:
+		return "📰 новина"
+	}
 }
 
 func newTextMessage(chatID string, text string) (tgbotapi.MessageConfig, error) {
