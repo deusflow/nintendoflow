@@ -181,6 +181,15 @@ func DeleteModerationEditSessionsByArticle(ctx context.Context, db *sql.DB, arti
 	return err
 }
 
+// CleanupExpiredModerationEditSessions removes sessions older than the given TTL.
+func CleanupExpiredModerationEditSessions(ctx context.Context, db *sql.DB, ttl time.Duration) error {
+	_, err := db.ExecContext(ctx,
+		`DELETE FROM moderation_edit_sessions WHERE updated_at < NOW() - ($1 * INTERVAL '1 second')`,
+		int64(ttl.Seconds()),
+	)
+	return err
+}
+
 func FetchRecentURLHashes(ctx context.Context, db *sql.DB, hours int) (map[string]struct{}, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT url_hash

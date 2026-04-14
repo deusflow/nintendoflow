@@ -9,6 +9,8 @@ import (
 	"github.com/kkdai/youtube/v2"
 )
 
+const maxVideoBytes = 50 << 20 // 50 MB — Telegram upload limit
+
 // getYouTubeStream finds and downloads a YouTube video as a memory stream.
 func getYouTubeStream(ctx context.Context, videoURL string) (io.ReadCloser, int64, error) {
 	client := youtube.Client{}
@@ -48,10 +50,21 @@ func getYouTubeStream(ctx context.Context, videoURL string) (io.ReadCloser, int6
 		return nil, 0, fmt.Errorf("no suitable mp4 format with audio found")
 	}
 
+	// Reject oversized videos before downloading to avoid OOM.
+	// ContentLength may be 0 when the library couldn't determine size — skip check in that case.
+	if selected.ContentLength > 0 && selected.ContentLength > maxVideoBytes {
+		return nil, 0, fmt.Errorf("video too large: %d bytes (limit %d)", selected.ContentLength, maxVideoBytes)
+	}
+
 	stream, size, err := client.GetStreamContext(ctx, vid, selected)
 	if err != nil {
 		return nil, 0, fmt.Errorf("get stream: %w", err)
 	}
 
-	return stream, size, nil
+	// Wrap with a size cap so reads beyond the limit return EOF instead of OOM.
+	limited := struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(stream, maxVideoBytes), stream}
+	return limited, size, nil
 }

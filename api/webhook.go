@@ -70,6 +70,17 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort cleanup of expired edit sessions on every request.
+	if dsn := strings.TrimSpace(os.Getenv("DATABASE_URL")); dsn != "" {
+		if database, dbErr := getDB(dsn); dbErr == nil {
+			cleanCtx, cleanCancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cleanCancel()
+			if cleanErr := db.CleanupExpiredModerationEditSessions(cleanCtx, database, editSessionTTL); cleanErr != nil {
+				slog.Warn("webhook: cleanup expired edit sessions failed (non-fatal)", "error", cleanErr)
+			}
+		}
+	}
+
 	var update tgbotapi.Update
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		slog.Error("webhook: failed to decode update", "error", err)

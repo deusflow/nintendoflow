@@ -12,15 +12,26 @@ type NewsInput struct {
 	Source string
 }
 
-// sanitize убирает потенциальные prompt injection из пользовательских данных.
+// sanitizeInput removes potential prompt injection attempts from user-supplied data.
 func sanitizeInput(s string) string {
 	dangerous := []string{
-		"=== ", "ЗАВДАННЯ", "ІНСТРУКЦ", "SKIP", "TYPE:",
+		// structural delimiters used in the prompt template
+		"=== ", "ЗАВДАННЯ", "ІНСТРУКЦ",
+		// output control tokens the model should never see in input
+		"SKIP", "TYPE:",
+		// common English injection phrases
 		"ignore previous", "forget instructions",
+		"ignore all", "disregard", "new instructions",
+		"you are now", "act as", "jailbreak",
+		// role/system header injections
+		"SYSTEM:", "DEVELOPER:", "RULES:", "ASSISTANT:",
+		// markdown code block wrappers that can embed system context
+		"```system", "```instructions", "```prompt",
 	}
 	result := s
 	for _, d := range dangerous {
 		result = strings.ReplaceAll(result, d, "")
+		result = strings.ReplaceAll(result, strings.ToLower(d), "")
 	}
 	return strings.TrimSpace(result)
 }
