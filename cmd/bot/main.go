@@ -443,7 +443,11 @@ func main() {
 
 func buildSelectorPrompt(candidates []candidate) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Here are %d news headlines. Return only the number of the single most interesting one for a Nintendo-focused Ukrainian Telegram channel. Return just the number, nothing else.\n\n", len(candidates)))
+	b.WriteString(fmt.Sprintf("Here are %d news headlines. Return only the number of the single most interesting one for a Nintendo-focused Ukrainian Telegram channel.\n", len(candidates)))
+	b.WriteString("PRIORITY 1: Hardware (Switch 2, consoles), system updates, financial plans, business, studio acquisitions. (MUST PREFER if present!)\n")
+	b.WriteString("PRIORITY 2: Major first-party Nintendo game releases (Zelda, Mario, Metroid, etc.).\n")
+	b.WriteString("PRIORITY 3: Third-party or indie games (ONLY IF no Priority 1 or 2 news is available).\n")
+	b.WriteString("Return just the number, nothing else.\n\n")
 	for i, c := range candidates {
 		desc := strings.ReplaceAll(c.item.Description, "\n", " ")
 		desc = strings.TrimSpace(desc)

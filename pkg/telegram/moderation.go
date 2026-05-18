@@ -24,7 +24,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	if err != nil {
 		return 0, err
 	}
-	markup := moderationKeyboard(article.ID)
+	markup := moderationKeyboard(article.ID, strings.TrimSpace(article.VideoURL))
 
 	previewImage := strings.TrimSpace(article.ImageURL)
 	if previewImage == "" && strings.TrimSpace(article.VideoURL) == "" {
@@ -67,7 +67,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 		return 0, err
 	}
 	msg.ParseMode = "HTML"
-	msg.DisableWebPagePreview = false
+	msg.DisableWebPagePreview = true
 	msg.ReplyMarkup = markup
 
 	sent, err := bot.Send(msg)
@@ -157,7 +157,7 @@ func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, te
 }
 
 func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
-	markup := moderationKeyboard(article.ID)
+	markup := moderationKeyboard(article.ID, strings.TrimSpace(article.VideoURL))
 	if err := editModerationMessage(bot, chatID, messageID, buildModerationPreviewText(article), &markup); err != nil {
 		return fmt.Errorf("telegram edit moderation preview: %w", err)
 	}
@@ -186,14 +186,24 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	return action, id, nil
 }
 
-func moderationKeyboard(articleID int) tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Publish", fmt.Sprintf("mod:%s:%d", moderationActionPublish, articleID)),
-			tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, articleID)),
-			tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, articleID)),
-		),
-	)
+func moderationKeyboard(articleID int, videoURL string) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Action row
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("Publish", fmt.Sprintf("mod:%s:%d", moderationActionPublish, articleID)),
+		tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, articleID)),
+		tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, articleID)),
+	))
+
+	// Link row
+	if videoURL != "" {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("🎥 Дивитися відео", videoURL),
+		))
+	}
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
 func moderationWaitingKeyboard(articleID int) tgbotapi.InlineKeyboardMarkup {
