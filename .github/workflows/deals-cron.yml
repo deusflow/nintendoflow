@@ -1,0 +1,34 @@
+name: Nintendo Deals Digest
+
+on:
+  schedule:
+    - cron: '0 10 * * 4' # Every Thursday at 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  run-deals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: '.go-version'
+          cache: true
+
+      - name: Build Deals Bot
+        run: go build -o deals-bot ./cmd/deals
+
+      - name: Run Deals Bot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TEST_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TEST_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TEST_ADMIN_CHAT_ID: ${{ secrets.TEST_ADMIN_CHAT_ID }}
+          TEST_MODERATION_MODE: "true"
+          ITAD_API_KEY: ${{ secrets.ITAD_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: ./deals-bot

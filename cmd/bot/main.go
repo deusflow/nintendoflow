@@ -34,11 +34,13 @@ const (
 )
 
 type candidate struct {
-	item      fetcher.Item
-	score     int
-	rankScore int
-	urlHash   string
-	titleHash string
+	item           fetcher.Item
+	score          int
+	rankScore      int
+	techScore      int
+	weirdnessScore int
+	urlHash        string
+	titleHash      string
 }
 
 const feedPriorityRankingScale = 2
@@ -207,11 +209,13 @@ func main() {
 		}
 
 		candidates = append(candidates, candidate{
-			item:      item,
-			score:     result.Score,
-			rankScore: candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours),
-			urlHash:   urlHash,
-			titleHash: titleHash,
+			item:           item,
+			score:          result.Score,
+			rankScore:      candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours),
+			techScore:      result.TechScore,
+			weirdnessScore: result.WeirdnessScore,
+			urlHash:        urlHash,
+			titleHash:      titleHash,
 		})
 		slog.Debug("candidate accepted for AI", "title", item.Title, "score", result.Score, "signature", semanticSig)
 		knownURLs[urlHash] = struct{}{}
@@ -296,10 +300,22 @@ func main() {
 	logStage("image_fetch", stageStart, runStart)
 	stageStart = time.Now()
 
+	var devilTheory string
+	if selected.techScore > 100 || selected.weirdnessScore >= 30 {
+		slog.Info("Devil's Advocate mode activated for high tech or weirdness score", "tech_score", selected.techScore, "weirdness_score", selected.weirdnessScore)
+		theoryPrompt := fmt.Sprintf("Виступи в ролі техно-аналітика Нінтендо. Проаналізуй наступну новину (заголовок: %s, текст: %s). Знайди прихований технічний зміст або натяки, що це може означати для нової консолі Switch 2 (наприклад, дизайн, залізо або ринки збуту) і напиши коротку, сміливу, але логічну гіпотезу (до 60 слів). Пиши ТІЛЬКИ текст гіпотези, без привітань, українською мовою.", selected.item.Title, selected.item.Description)
+		theoryText, errT := manager.Generate(ctx, theoryPrompt)
+		if errT == nil && theoryText != "" && theoryText != "SKIP" {
+			devilTheory = theoryText
+			slog.Info("Devil's Advocate theory generated", "theory", devilTheory)
+		}
+	}
+
 	rewritePrompt := ai.BuildPrompt(ai.NewsInput{
-		Title:  selected.item.Title,
-		Body:   selected.item.Description,
-		Source: selected.item.SourceName,
+		Title:       selected.item.Title,
+		Body:        selected.item.Description,
+		Source:      selected.item.SourceName,
+		DevilTheory: devilTheory,
 	})
 	aiRewriteUsed = true
 	rewritten, err := manager.Generate(ctx, rewritePrompt)

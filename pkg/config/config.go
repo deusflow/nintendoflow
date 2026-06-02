@@ -27,6 +27,9 @@ type Config struct {
 	TestModerationMode bool
 	FeedsPath          string
 	KeywordsPath       string
+	ITADAPIKey            string
+	DiscountMinCut        int
+	DiscountMinMetacritic int
 }
 
 type Feed struct {
@@ -85,6 +88,9 @@ func Load() (*Config, error) {
 		TestModerationMode: os.Getenv("TEST_MODERATION_MODE") == "true",
 		FeedsPath:          getEnvOrDefault("FEEDS_PATH", "feeds.yaml"),
 		KeywordsPath:       getEnvOrDefault("KEYWORDS_PATH", "keywords.yaml"),
+		ITADAPIKey:            os.Getenv("ITAD_API_KEY"),
+		DiscountMinCut:        getEnvInt("DISCOUNT_MIN_CUT", 40),
+		DiscountMinMetacritic: getEnvInt("DISCOUNT_MIN_METACRITIC", 75),
 	}
 
 	if cfg.DatabaseURL == "" {

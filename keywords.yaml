@@ -372,3 +372,56 @@ topics:
       - word: "tips and tricks"
         role: reject
         weight: -40
+  patents:
+    enabled: true
+    priority: 150
+    keywords:
+      - word: "patent"
+        role: tech
+        weight: 30
+      - word: "wipo"
+        role: tech
+        weight: 25
+      - word: "uspto"
+        role: tech
+        weight: 25
+      - word: "trademark"
+        role: tech
+        weight: 20
+      - word: "filing"
+        role: tech
+        weight: 20
+      - word: "schematic"
+        role: tech
+        weight: 25
+      - word: "magnetic"
+        role: tech
+        weight: 20
+      - word: "invention"
+        role: tech
+        weight: 20
+  supply_chain:
+    enabled: true
+    priority: 140
+    keywords:
+      - word: "nvidia"
+        role: tech
+        weight: 25
+      - word: "tegra"
+        role: tech
+        weight: 30
+      - word: "samsung"
+        role: tech
+        weight: 20
+      - word: "foxconn"
+        role: tech
+        weight: 30
+      - word: "shipment"
+        role: tech
+        weight: 20
+      - word: "assembly"
+        role: tech
+        weight: 20
+      - word: "manufacturing"
+        role: tech
+        weight: 20

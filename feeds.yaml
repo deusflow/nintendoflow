@@ -132,3 +132,22 @@
   type: aggregator
   require_anchor: true
   needs_redirect_resolve: true
+# ============================================================
+# БІЗНЕС ТА ТЕХНОЛОГІЇ
+# ============================================================
+- url: "https://news.google.com/rss/search?q=Nintendo+Bloomberg+business&hl=en-US&gl=US&ceid=US:en"
+  name: "Bloomberg (via Google)"
+  lang: en
+  priority: 120
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: true
+- url: "https://news.google.com/rss/search?q=Nintendo+Nikkei+Asia&hl=en-US&gl=US&ceid=US:en"
+  name: "Nikkei Asia (via Google)"
+  lang: en
+  priority: 120
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: true

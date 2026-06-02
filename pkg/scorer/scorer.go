@@ -7,10 +7,12 @@ import (
 )
 
 type Result struct {
-	Score         int
-	TechScore     int
-	HasAnchor     bool
-	HasComparison bool
+	Score          int
+	TechScore      int
+	HasAnchor      bool
+	HasComparison  bool
+	MatchedTopics  map[string]bool
+	WeirdnessScore int
 }
 
 const strictFeedHighTechBypassScore = 240
@@ -18,10 +20,10 @@ const strictFeedHighTechBypassScore = 240
 // Evaluate computes relevance from topics. Disabled topics are skipped.
 // Each keyword's effective weight = keyword.Weight * topic.Priority / 100.
 func Evaluate(title, body string, topics map[string]config.Topic) Result {
-	result := Result{}
+	result := Result{MatchedTopics: make(map[string]bool)}
 	text := strings.ToLower(title + " " + body)
 
-	for _, topic := range topics {
+	for topicName, topic := range topics {
 		if !topic.Enabled {
 			continue
 		}
@@ -37,6 +39,7 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 			if strings.Contains(text, word) {
 				effective := kw.Weight * priority / 100
 				result.Score += effective
+				result.MatchedTopics[topicName] = true
 				switch strings.ToLower(strings.TrimSpace(kw.Role)) {
 				case "anchor":
 					result.HasAnchor = true
@@ -48,6 +51,13 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 			}
 		}
 	}
+
+	// Calculate Weirdness Score (Idea 6)
+	// If an article hits multiple completely different contexts (e.g. business + tech + anchor)
+	if len(result.MatchedTopics) >= 3 {
+		result.WeirdnessScore = len(result.MatchedTopics) * 10
+	}
+
 	return result
 }
 

@@ -7,9 +7,10 @@ import (
 
 // NewsInput — структура для передачи параметров новости.
 type NewsInput struct {
-	Title  string
-	Body   string
-	Source string
+	Title       string
+	Body        string
+	Source      string
+	DevilTheory string
 }
 
 // sanitizeInput removes potential prompt injection attempts from user-supplied data.
@@ -85,9 +86,9 @@ SKIP
 ДОБРЕ (Формат відповіді):
 TYPE: news
 
-Новинка <b>Pokopia</b> отримала шалений фідбек і, здається, просто пройшлася по болючих місцях конкурента. У грі більше унікальних діалогів, живіші персонажі і мультиплеєр, де реально є що робити, а не «подивився острів і пішов».
+Новинка <b>Pokopia</b> отримала шалений фідбек і, здається, просто пройшлася по болючих місцях конкурента. У грі більше унікальних діалогів, живіші персонажі і мультиплеєр, де реально є що робити, а не подивився острів і пішов.
 
-Гравці вже жартують, що це «той самий Animal Crossing, тільки нормальний» — з прогресією, свободою будівництва і без дивних обмежень, які роками дратували фанів.
+Гравці вже жартують, що це той самий Animal Crossing, тільки нормальний — з прогресією, свободою будівництва і без дивних обмежень, які роками дратували фанів.
 
 Nintendo поки мовчить, але сигнал очевидний: або наступна частина <b>Animal Crossing</b> стане сміливішою, або її остаточно затьмарить Pokopia.`
 
@@ -101,7 +102,7 @@ const promptTemplate = `%s
 Заголовок: %s
 
 Текст: %s
-
+%s
 Джерело: %s
 
 === ЗАВДАННЯ ===
@@ -116,11 +117,16 @@ TYPE: <insight|rumor|news|offtop>
 
 // BuildPrompt собирает финальный текст запроса из данных новости.
 func BuildPrompt(in NewsInput) string {
+	var theoryBlock string
+	if in.DevilTheory != "" {
+		theoryBlock = "\n[СЕКРЕТНИЙ ІНСАЙТ ДЛЯ ПОСТА]: " + sanitizeInput(in.DevilTheory)
+	}
 	return fmt.Sprintf(
 		promptTemplate,
 		styleGuide,
 		sanitizeInput(in.Title),
 		sanitizeInput(in.Body),
+		theoryBlock,
 		sanitizeInput(in.Source),
 	)
 }
