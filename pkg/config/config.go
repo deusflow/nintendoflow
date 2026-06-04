@@ -89,8 +89,8 @@ func Load() (*Config, error) {
 		FeedsPath:          getEnvOrDefault("FEEDS_PATH", "feeds.yaml"),
 		KeywordsPath:       getEnvOrDefault("KEYWORDS_PATH", "keywords.yaml"),
 		ITADAPIKey:            os.Getenv("ITAD_API_KEY"),
-		DiscountMinCut:        getEnvInt("DISCOUNT_MIN_CUT", 40),
-		DiscountMinMetacritic: getEnvInt("DISCOUNT_MIN_METACRITIC", 75),
+		DiscountMinCut:        getEnvInt("DISCOUNT_MIN_CUT", 30),
+		DiscountMinMetacritic: getEnvInt("DISCOUNT_MIN_METACRITIC", 70),
 	}
 
 	if cfg.DatabaseURL == "" {
