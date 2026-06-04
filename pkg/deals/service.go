@@ -3,9 +3,11 @@ package deals
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -40,39 +42,107 @@ func dealScore(d Deal) float64 {
 }
 
 // FetchAndFilter is the main orchestrator:
-// 1. Fetches deals from ITAD (primary, European eShop) or CheapShark (fallback).
+// 1. Fetches deals from Nintendo Europe, IsThereAnyDeal, and CheapShark, and merges them.
 // 2. Filters by minCut, minMeta, and DB-backed history (60 days).
 // 3. Ranks by combined score: game quality × discount depth × absolute savings.
 // 4. Enriches top 10 results with Reddit quotes.
 // 5. Returns at most 10 deals.
 func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCut, minMeta int) ([]Deal, error) {
-	var allDeals []Deal
-	var err error
+	var rawDeals []Deal
+	var allSourcesFailed = true
 
-	// --- Step 1: Fetch raw deals (European Nintendo eShop) ---
+	// -- Source 1: Nintendo Europe Official Solr API --
+	noeDeals, err := FetchNintendoOfficialDeals()
+	if err != nil {
+		slog.Warn("Nintendo Official fetch failed", "error", err)
+	} else {
+		slog.Info("Nintendo Official fetched", "count", len(noeDeals))
+		rawDeals = append(rawDeals, noeDeals...)
+		allSourcesFailed = false
+	}
+
+	// -- Source 2: IsThereAnyDeal (ITAD) API --
 	if itadKey != "" {
-		allDeals, err = FetchITADDeals(itadKey)
+		itadDeals, err := FetchITADDeals(itadKey)
 		if err != nil {
-			slog.Warn("ITAD fetch failed, falling back to CheapShark", "error", err)
-			allDeals = nil
+			slog.Warn("ITAD fetch failed", "error", err)
 		} else {
-			slog.Info("ITAD fetched", "count", len(allDeals))
+			slog.Info("ITAD fetched", "count", len(itadDeals))
+			rawDeals = append(rawDeals, itadDeals...)
+			allSourcesFailed = false
 		}
 	} else {
-		slog.Info("ITAD API key missing, using CheapShark directly")
+		slog.Info("ITAD API key missing, skipping source")
 	}
 
-	if len(allDeals) == 0 {
-		allDeals, err = FetchCheapSharkDeals()
-		if err != nil {
-			return nil, err
+	// -- Source 3: CheapShark API --
+	csDeals, err := FetchCheapSharkDeals()
+	if err != nil {
+		slog.Warn("CheapShark fetch failed", "error", err)
+	} else {
+		slog.Info("CheapShark fetched", "count", len(csDeals))
+		rawDeals = append(rawDeals, csDeals...)
+		allSourcesFailed = false
+	}
+
+	if allSourcesFailed {
+		return nil, fmt.Errorf("all deal sources failed to fetch")
+	}
+
+	// --- Step 1.1: Merge and deduplicate deals by title ---
+	merged := make(map[string]Deal)
+	for _, d := range rawDeals {
+		norm := normalizeTitle(d.Title)
+		if norm == "" {
+			continue
 		}
-		slog.Info("CheapShark fetched", "count", len(allDeals))
+
+		existing, exists := merged[norm]
+		if !exists {
+			merged[norm] = d
+			continue
+		}
+
+		// Prefer non-zero Metacritic score
+		if existing.Metacritic == 0 && d.Metacritic > 0 {
+			existing.Metacritic = d.Metacritic
+		}
+
+		// Prefer EUR/DKK (€/kr) over USD ($)
+		isUSD1 := existing.Currency == "$" || existing.Source == "CheapShark"
+		isUSD2 := d.Currency == "$" || d.Source == "CheapShark"
+
+		if isUSD1 && !isUSD2 {
+			existing.OldPrice = d.OldPrice
+			existing.NewPrice = d.NewPrice
+			existing.Currency = d.Currency
+			existing.Cut = d.Cut
+			existing.URL = d.URL
+			existing.Source = d.Source + "+" + existing.Source
+		} else if !isUSD1 && isUSD2 {
+			existing.Source = existing.Source + "+" + d.Source
+		} else {
+			// If both are same, prefer NintendoOfficial or ITAD over CheapShark
+			if existing.Source == "CheapShark" && d.Source != "CheapShark" {
+				existing.OldPrice = d.OldPrice
+				existing.NewPrice = d.NewPrice
+				existing.Currency = d.Currency
+				existing.Cut = d.Cut
+				existing.URL = d.URL
+				existing.Source = d.Source + "+" + existing.Source
+			} else {
+				existing.Source = existing.Source + "+" + d.Source
+			}
+		}
+
+		merged[norm] = existing
 	}
 
-	if len(allDeals) == 0 {
-		return nil, nil
+	var allDeals []Deal
+	for _, d := range merged {
+		allDeals = append(allDeals, d)
 	}
+	slog.Info("merged deals total count", "count", len(allDeals))
 
 	// --- Step 2: Filter by minimum discount % and metacritic ---
 	var filtered []Deal
@@ -156,3 +226,16 @@ func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCu
 
 	return top, nil
 }
+
+// normalizeTitle lowercases the title and keeps only alphanumeric characters.
+func normalizeTitle(title string) string {
+	title = strings.ToLower(title)
+	var sb strings.Builder
+	for _, r := range title {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
