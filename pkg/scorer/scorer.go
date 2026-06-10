@@ -11,6 +11,7 @@ type Result struct {
 	TechScore      int
 	HasAnchor      bool
 	HasComparison  bool
+	MustPublish    bool
 	MatchedTopics  map[string]bool
 	WeirdnessScore int
 }
@@ -47,6 +48,9 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 					result.HasComparison = true
 				case "tech":
 					result.TechScore += effective
+				case "must_publish":
+					result.MustPublish = true
+					result.HasAnchor = true
 				}
 			}
 		}
@@ -67,6 +71,9 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 //     unless the article has a very high technical signal score.
 func ShouldPost(title, body string, topics map[string]config.Topic, minScore int, requireAnchor bool) (Result, bool, string) {
 	result := Evaluate(title, body, topics)
+	if result.MustPublish {
+		return result, true, "must_publish_event"
+	}
 	if result.Score < minScore {
 		return result, false, "below_min_score"
 	}

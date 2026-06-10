@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	maxAICallsPerRun           = 2
+	maxAICallsPerRun           = 4
 	aiCallDelay                = 20 * time.Second
 	defaultPlaceholdersBaseURL = "https://deusflow.github.io/nintendoflow/assets/placeholders"
 	aggregatorFreshnessHours   = 12
@@ -39,6 +39,7 @@ type candidate struct {
 	rankScore      int
 	techScore      int
 	weirdnessScore int
+	mustPublish    bool
 	urlHash        string
 	titleHash      string
 }
@@ -214,9 +215,13 @@ func main() {
 			rankScore:      candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours),
 			techScore:      result.TechScore,
 			weirdnessScore: result.WeirdnessScore,
+			mustPublish:    result.MustPublish,
 			urlHash:        urlHash,
 			titleHash:      titleHash,
 		})
+		if result.MustPublish {
+			slog.Info("MUST-PUBLISH event detected", "title", item.Title, "score", result.Score)
+		}
 		slog.Debug("candidate accepted for AI", "title", item.Title, "score", result.Score, "signature", semanticSig)
 		knownURLs[urlHash] = struct{}{}
 		knownTitles[titleHash] = struct{}{}
@@ -259,20 +264,35 @@ func main() {
 	}
 	topCandidates = checkedTop
 
+	// --- Must-Publish Override: major events (e.g. Nintendo Direct) bypass AI selector ---
+	mustPublishIdx := -1
+	for i, c := range topCandidates {
+		if c.mustPublish {
+			mustPublishIdx = i
+			break
+		}
+	}
+
 	selectionPrompt := buildSelectorPrompt(topCandidates)
 
-	aiSelectorUsed = true
-	rawSelection, err := manager.Generate(ctx, selectionPrompt)
-	selectedIdx := 0
-	if err != nil {
-		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
+	var selectedIdx int
+	if mustPublishIdx >= 0 {
+		selectedIdx = mustPublishIdx
+		slog.Info("MUST-PUBLISH override: skipping AI selector", "title", topCandidates[selectedIdx].item.Title)
 	} else {
-		slog.Info("AI selector used", "provider", manager.LastProvider())
-		idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
-		if !ok {
-			slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
+		aiSelectorUsed = true
+		rawSelection, err := manager.Generate(ctx, selectionPrompt)
+		selectedIdx = 0
+		if err != nil {
+			slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 		} else {
-			selectedIdx = idx
+			slog.Info("AI selector used", "provider", manager.LastProvider())
+			idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
+			if !ok {
+				slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
+			} else {
+				selectedIdx = idx
+			}
 		}
 	}
 	logStage("ai_selector", stageStart, runStart)

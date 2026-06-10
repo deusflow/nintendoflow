@@ -205,15 +205,46 @@ topics:
     enabled: true
     priority: 130
     keywords:
+      # Must-publish: крупные события всегда публикуются
       - word: "nintendo direct"
-        role: anchor
-        weight: 45
+        role: must_publish
+        weight: 100
       - word: "direct mini"
-        role: anchor
-        weight: 35
+        role: must_publish
+        weight: 80
       - word: "partner direct"
-        role: anchor
-        weight: 35
+        role: must_publish
+        weight: 80
+      - word: "nintendo direct 2026"
+        role: must_publish
+        weight: 120
+      - word: "nintendo direct 2027"
+        role: must_publish
+        weight: 120
+      - word: "indie world"
+        role: must_publish
+        weight: 80
+      - word: "game awards"
+        role: must_publish
+        weight: 70
+      - word: "nintendo showcase"
+        role: must_publish
+        weight: 90
+      - word: "nintendo live"
+        role: must_publish
+        weight: 70
+      - word: "switch 2 reveal"
+        role: must_publish
+        weight: 120
+      - word: "switch 2 launch"
+        role: must_publish
+        weight: 120
+      - word: "switch 2 release date"
+        role: must_publish
+        weight: 120
+      - word: "switch 2 price"
+        role: must_publish
+        weight: 100
 
   release:
     enabled: true
