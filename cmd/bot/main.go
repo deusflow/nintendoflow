@@ -320,22 +320,28 @@ func main() {
 	logStage("image_fetch", stageStart, runStart)
 	stageStart = time.Now()
 
-	var devilTheory string
-	if selected.techScore > 100 || selected.weirdnessScore >= 30 {
-		slog.Info("Devil's Advocate mode activated for high tech or weirdness score", "tech_score", selected.techScore, "weirdness_score", selected.weirdnessScore)
-		theoryPrompt := fmt.Sprintf("Виступи в ролі техно-аналітика Нінтендо. Проаналізуй наступну новину (заголовок: %s, текст: %s). Знайди прихований технічний зміст або натяки, що це може означати для нової консолі Switch 2 (наприклад, дизайн, залізо або ринки збуту) і напиши коротку, сміливу, але логічну гіпотезу (до 60 слів). Пиши ТІЛЬКИ текст гіпотези, без привітань, українською мовою.", selected.item.Title, selected.item.Description)
-		theoryText, errT := manager.Generate(ctx, theoryPrompt)
-		if errT == nil && theoryText != "" && theoryText != "SKIP" {
-			devilTheory = theoryText
-			slog.Info("Devil's Advocate theory generated", "theory", devilTheory)
-		}
+	// Step 6.6: fetch article content for the winning article.
+	var articleBody string
+	contentCtx, contentCancel := context.WithTimeout(ctx, 10*time.Second)
+	content, contentErr := fetcher.FetchArticleContent(contentCtx, selected.item.Link)
+	contentCancel()
+	if contentErr != nil {
+		slog.Warn("article content fetch failed, using RSS description", "url", selected.item.Link, "error", contentErr)
+		articleBody = selected.item.Description
+	} else if content != "" {
+		articleBody = content
+		slog.Info("article content fetched", "url", selected.item.Link, "chars", len(content))
+	} else {
+		articleBody = selected.item.Description
+		slog.Info("article content empty, using RSS description", "url", selected.item.Link)
 	}
+	logStage("content_fetch", stageStart, runStart)
+	stageStart = time.Now()
 
 	rewritePrompt := ai.BuildPrompt(ai.NewsInput{
-		Title:       selected.item.Title,
-		Body:        selected.item.Description,
-		Source:      selected.item.SourceName,
-		DevilTheory: devilTheory,
+		Title:  selected.item.Title,
+		Body:   articleBody,
+		Source: selected.item.SourceName,
 	})
 	aiRewriteUsed = true
 	rewritten, err := manager.Generate(ctx, rewritePrompt)

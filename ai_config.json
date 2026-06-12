@@ -2,21 +2,21 @@
   "models": [
     {
       "name": "gemini",
-      "model": "gemini-2.5-flash",
-      "enabled": false,
+      "model": "gemini-3.5-flash",
+      "enabled": true,
       "api_key_env": "GEMINI_API_KEY"
-    },
-    {
-      "name": "github_models",
-      "model": "gpt-5",
-      "enabled": false,
-      "api_key_env": "GH_MODELS_API_KEY"
     },
     {
       "name": "groq",
       "model": "llama-3.3-70b-versatile",
       "enabled": true,
       "api_key_env": "GROQ_API_KEY"
+    },
+    {
+      "name": "github_models",
+      "model": "gpt-5",
+      "enabled": false,
+      "api_key_env": "GH_MODELS_API_KEY"
     },
     {
       "name": "openrouter",
@@ -26,4 +26,3 @@
     }
   ]
 }
-
