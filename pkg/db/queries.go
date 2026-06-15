@@ -36,6 +36,7 @@ type Article struct {
 	PostedTG    bool
 	AIProvider  string
 	Status      string
+	EventTag    string
 	PublishedAt *time.Time
 	CreatedAt   time.Time
 }
@@ -58,18 +59,19 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 	var id int
 	err := db.QueryRowContext(ctx, `
 		INSERT INTO articles
-			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, article_type, score, status, published_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, article_type, score, status, published_at, event_tag)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (source_url) DO UPDATE
 		SET score=GREATEST(articles.score, EXCLUDED.score),
 			article_type=COALESCE(NULLIF(articles.article_type,''), EXCLUDED.article_type),
 			status=CASE
 				WHEN articles.status='published' THEN articles.status
 				ELSE EXCLUDED.status
-			END
+			END,
+			event_tag=COALESCE(NULLIF(articles.event_tag,''), EXCLUDED.event_tag)
 		RETURNING id`,
 		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw, nullStr(a.VideoURL), nullStr(a.ImageURL),
-		a.SourceName, a.SourceType, nullStr(a.ArticleType), a.Score, status, a.PublishedAt,
+		a.SourceName, a.SourceType, nullStr(a.ArticleType), a.Score, status, a.PublishedAt, nullStr(a.EventTag),
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -82,7 +84,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	err := db.QueryRowContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
-		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), published_at, created_at
+		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), COALESCE(event_tag, ''), published_at, created_at
 		FROM articles
 		WHERE id=$1`, id).
 		Scan(
@@ -103,6 +105,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 			&a.PostedTG,
 			&a.AIProvider,
 			&a.Status,
+			&a.EventTag,
 			&a.PublishedAt,
 			&a.CreatedAt,
 		)
@@ -431,4 +434,22 @@ func nullStr(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+// WasEventPostedRecently returns true if an article with the given event_tag
+// was created (or published) in the last 'hours'.
+func WasEventPostedRecently(ctx context.Context, db *sql.DB, eventTag string, hours int) (bool, error) {
+	if eventTag == "" {
+		return false, nil
+	}
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM articles
+		WHERE event_tag = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 hour')
+		AND status IN ('published', 'pending')
+	`, eventTag, hours).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

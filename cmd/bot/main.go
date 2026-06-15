@@ -34,14 +34,16 @@ const (
 )
 
 type candidate struct {
-	item           fetcher.Item
-	score          int
-	rankScore      int
-	techScore      int
-	weirdnessScore int
-	mustPublish    bool
-	urlHash        string
-	titleHash      string
+	item                fetcher.Item
+	score               int
+	rankScore           int
+	techScore           int
+	weirdnessScore      int
+	mustPublish         bool
+	eventTag            string
+	recentSimilarPosted bool
+	urlHash             string
+	titleHash           string
 }
 
 const feedPriorityRankingScale = 2
@@ -209,15 +211,27 @@ func main() {
 			continue
 		}
 
+		var recentSimilar bool
+		if result.EventTag != "" {
+			recentSimilar, _ = db.WasEventPostedRecently(ctx, database, result.EventTag, 6)
+		}
+
+		rankScore := candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours)
+		if recentSimilar {
+			rankScore -= 50
+		}
+
 		candidates = append(candidates, candidate{
-			item:           item,
-			score:          result.Score,
-			rankScore:      candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours),
-			techScore:      result.TechScore,
-			weirdnessScore: result.WeirdnessScore,
-			mustPublish:    result.MustPublish,
-			urlHash:        urlHash,
-			titleHash:      titleHash,
+			item:                item,
+			score:               result.Score,
+			rankScore:           rankScore,
+			techScore:           result.TechScore,
+			weirdnessScore:      result.WeirdnessScore,
+			mustPublish:         result.MustPublish,
+			eventTag:            result.EventTag,
+			recentSimilarPosted: recentSimilar,
+			urlHash:             urlHash,
+			titleHash:           titleHash,
 		})
 		if result.MustPublish {
 			slog.Info("MUST-PUBLISH event detected", "title", item.Title, "score", result.Score)
@@ -264,35 +278,21 @@ func main() {
 	}
 	topCandidates = checkedTop
 
-	// --- Must-Publish Override: major events (e.g. Nintendo Direct) bypass AI selector ---
-	mustPublishIdx := -1
-	for i, c := range topCandidates {
-		if c.mustPublish {
-			mustPublishIdx = i
-			break
-		}
-	}
-
 	selectionPrompt := buildSelectorPrompt(topCandidates)
 
 	var selectedIdx int
-	if mustPublishIdx >= 0 {
-		selectedIdx = mustPublishIdx
-		slog.Info("MUST-PUBLISH override: skipping AI selector", "title", topCandidates[selectedIdx].item.Title)
+	aiSelectorUsed = true
+	rawSelection, err := manager.Generate(ctx, selectionPrompt)
+	selectedIdx = 0
+	if err != nil {
+		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 	} else {
-		aiSelectorUsed = true
-		rawSelection, err := manager.Generate(ctx, selectionPrompt)
-		selectedIdx = 0
-		if err != nil {
-			slog.Warn("AI selector failed, using top-scored fallback", "error", err)
+		slog.Info("AI selector used", "provider", manager.LastProvider())
+		idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
+		if !ok {
+			slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
 		} else {
-			slog.Info("AI selector used", "provider", manager.LastProvider())
-			idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
-			if !ok {
-				slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
-			} else {
-				selectedIdx = idx
-			}
+			selectedIdx = idx
 		}
 	}
 	logStage("ai_selector", stageStart, runStart)
@@ -485,11 +485,9 @@ func main() {
 
 func buildSelectorPrompt(candidates []candidate) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Here are %d news headlines. Return only the number of the single most interesting one for a Nintendo-focused Ukrainian Telegram channel.\n", len(candidates)))
-	b.WriteString("PRIORITY 1: Hardware (Switch 2, consoles), system updates, financial plans, business, studio acquisitions. (MUST PREFER if present!)\n")
-	b.WriteString("PRIORITY 2: Major first-party Nintendo game releases (Zelda, Mario, Metroid, etc.).\n")
-	b.WriteString("PRIORITY 3: Third-party or indie games (ONLY IF no Priority 1 or 2 news is available).\n")
-	b.WriteString("Return just the number, nothing else.\n\n")
+	b.WriteString("Choose the best news candidate for a Ukrainian Nintendo Telegram channel.\n")
+	b.WriteString("Here is the ranked list of candidates (already scored by internal logic):\n\n")
+
 	for i, c := range candidates {
 		desc := strings.ReplaceAll(c.item.Description, "\n", " ")
 		desc = strings.TrimSpace(desc)
@@ -497,15 +495,24 @@ func buildSelectorPrompt(candidates []candidate) string {
 		if len(runes) > 240 {
 			desc = string(runes[:240]) + "..."
 		}
-		b.WriteString(strconv.Itoa(i + 1))
-		b.WriteString(") ")
-		b.WriteString(c.item.Title)
-		if desc != "" {
-			b.WriteString("\n")
-			b.WriteString(desc)
+		
+		recentFlag := ""
+		if c.recentSimilarPosted {
+			recentFlag = ", RECENT_SIMILAR_POSTED: True"
 		}
-		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("Candidate #%d [score: %d, type: %s%s]\n", i+1, c.score, c.item.SourceType, recentFlag))
+		b.WriteString(fmt.Sprintf("Title: %s\n", c.item.Title))
+		if desc != "" {
+			b.WriteString(fmt.Sprintf("Body: %s\n", desc))
+		}
+		b.WriteString("\n")
 	}
+
+	b.WriteString(`Instructions:
+1. Select the most interesting, fresh, and engaging candidate.
+2. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information (e.g., specific highly anticipated game reveals).
+3. Return ONLY the number of the best candidate (e.g., 1 or 2).
+4. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`)
 	return b.String()
 }
 

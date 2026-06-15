@@ -52,6 +52,7 @@ type Keyword struct {
 	Category string `yaml:"category"`
 	Role     string `yaml:"role"`
 	Weight   int    `yaml:"weight"`
+	EventTag string `yaml:"event_tag"`
 }
 
 // Topic groups keywords under a named category with an enabled flag and a

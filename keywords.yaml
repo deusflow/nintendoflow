@@ -209,42 +209,55 @@ topics:
       - word: "nintendo direct"
         role: must_publish
         weight: 100
+        event_tag: "nintendo_direct"
       - word: "direct mini"
         role: must_publish
         weight: 80
+        event_tag: "nintendo_direct_mini"
       - word: "partner direct"
         role: must_publish
         weight: 80
+        event_tag: "nintendo_direct_partner"
       - word: "nintendo direct 2026"
         role: must_publish
         weight: 120
+        event_tag: "nintendo_direct"
       - word: "nintendo direct 2027"
         role: must_publish
         weight: 120
+        event_tag: "nintendo_direct"
       - word: "indie world"
         role: must_publish
         weight: 80
+        event_tag: "indie_world"
       - word: "game awards"
         role: must_publish
         weight: 70
+        event_tag: "game_awards"
       - word: "nintendo showcase"
         role: must_publish
         weight: 90
+        event_tag: "nintendo_direct"
       - word: "nintendo live"
         role: must_publish
         weight: 70
+        event_tag: "nintendo_live"
       - word: "switch 2 reveal"
         role: must_publish
         weight: 120
+        event_tag: "switch_2_reveal"
       - word: "switch 2 launch"
         role: must_publish
         weight: 120
+        event_tag: "switch_2_launch"
       - word: "switch 2 release date"
         role: must_publish
         weight: 120
+        event_tag: "switch_2_reveal"
       - word: "switch 2 price"
         role: must_publish
         weight: 100
+        event_tag: "switch_2_reveal"
 
   release:
     enabled: true

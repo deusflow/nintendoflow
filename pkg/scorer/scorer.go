@@ -12,6 +12,7 @@ type Result struct {
 	HasAnchor      bool
 	HasComparison  bool
 	MustPublish    bool
+	EventTag       string
 	MatchedTopics  map[string]bool
 	WeirdnessScore int
 }
@@ -51,6 +52,9 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 				case "must_publish":
 					result.MustPublish = true
 					result.HasAnchor = true
+					if kw.EventTag != "" {
+						result.EventTag = kw.EventTag
+					}
 				}
 			}
 		}

@@ -1,0 +1,1 @@
+ALTER TABLE articles ADD COLUMN event_tag VARCHAR(100) DEFAULT '';
