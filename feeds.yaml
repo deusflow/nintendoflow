@@ -151,3 +151,33 @@
   type: insider
   require_anchor: true
   needs_redirect_resolve: true
+
+# ============================================================
+# ЯПОНСЬКІ БЛОГИ / ЗМІ
+# ============================================================
+- url: "https://topics.nintendo.co.jp/rss"
+  name: "Nintendo JP Topics"
+  lang: jp
+  priority: 80
+  active: true
+  type: media
+  require_anchor: false
+  needs_redirect_resolve: false
+
+- url: "https://www.famitsu.com/rss/article.xml"
+  name: "Famitsu"
+  lang: jp
+  priority: 85
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://automaton-media.com/feed/"
+  name: "Automaton"
+  lang: jp
+  priority: 85
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: false
