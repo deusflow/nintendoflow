@@ -29,12 +29,12 @@ func PostDealsDigest(bot *tgbotapi.BotAPI, chatID string, finalDeals []deals.Dea
 		newPriceStr := formatPrice(d.NewPrice)
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&sb,
 			"%d. 🔥 <b>%s</b> — <s>%s%s</s> → %s%s (-%d%%)\n",
 			i+1, escapeHTML(d.Title), d.Currency, oldPriceStr, d.Currency, newPriceStr, d.Cut,
-		))
-		sb.WriteString(fmt.Sprintf("⭐ Metacritic: %d | Nintendo Switch\n", d.Metacritic))
-		sb.WriteString(fmt.Sprintf("<i>%s</i>", escapeHTML(d.RedditQuote)))
+		)
+		fmt.Fprintf(&sb, "⭐ Metacritic: %d | Nintendo Switch\n", d.Metacritic)
+		fmt.Fprintf(&sb, "<i>%s</i>", escapeHTML(d.RedditQuote))
 
 		blocks = append(blocks, sb.String())
 	}

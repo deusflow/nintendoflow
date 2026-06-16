@@ -203,7 +203,7 @@ func FetchRecentURLHashes(ctx context.Context, db *sql.DB, hours int) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]struct{})
 	for rows.Next() {
@@ -229,7 +229,7 @@ func FetchRecentTitleHashes(ctx context.Context, db *sql.DB, hours int) (map[str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]struct{})
 	for rows.Next() {
@@ -258,7 +258,7 @@ func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make([]string, 0, 128)
 	for rows.Next() {
@@ -346,7 +346,7 @@ func ListPublishedArticles(ctx context.Context, db *sql.DB, limit, offset int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	articles := make([]Article, 0, limit)
 	for rows.Next() {

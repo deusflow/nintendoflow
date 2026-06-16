@@ -29,7 +29,7 @@ func FetchCheapSharkDeals() ([]Deal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cheapshark request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("cheapshark returned %d", resp.StatusCode)

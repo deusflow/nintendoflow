@@ -52,7 +52,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 						video.ReplyMarkup = markup
 					}
 					_, errSend := bot.Send(video)
-					stream.Close()
+					_ = stream.Close()
 					if errSend == nil {
 						return nil
 					} else {
@@ -64,7 +64,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 						slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 					}
 				} else {
-					stream.Close()
+					_ = stream.Close()
 					slog.Info("youtube video too large, fallback to native link preview", "article_id", article.ID, "size", size)
 					textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
 					if textErr == nil {
@@ -145,14 +145,7 @@ func getFallbackImageURL(articleType string) string {
 	}
 }
 
-func sendText(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
-	msg := tgbotapi.NewMessageToChannel(channelID, buildCaption(&article, 4096))
-	msg.ParseMode = "HTML"
-	if _, err := bot.Send(msg); err != nil {
-		return fmt.Errorf("telegram sendMessage: %w", err)
-	}
-	return nil
-}
+
 
 func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, previewURL string, markup *tgbotapi.InlineKeyboardMarkup) error {
 	type rawLinkPreview struct {
@@ -194,7 +187,7 @@ func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, p
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

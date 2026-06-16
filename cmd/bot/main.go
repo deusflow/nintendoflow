@@ -500,10 +500,10 @@ func buildSelectorPrompt(candidates []candidate) string {
 		if c.recentSimilarPosted {
 			recentFlag = ", RECENT_SIMILAR_POSTED: True"
 		}
-		b.WriteString(fmt.Sprintf("Candidate #%d [score: %d, type: %s%s]\n", i+1, c.score, c.item.SourceType, recentFlag))
-		b.WriteString(fmt.Sprintf("Title: %s\n", c.item.Title))
+		fmt.Fprintf(&b, "Candidate #%d [score: %d, type: %s%s]\n", i+1, c.score, c.item.SourceType, recentFlag)
+		fmt.Fprintf(&b, "Title: %s\n", c.item.Title)
 		if desc != "" {
-			b.WriteString(fmt.Sprintf("Body: %s\n", desc))
+			fmt.Fprintf(&b, "Body: %s\n", desc)
 		}
 		b.WriteString("\n")
 	}

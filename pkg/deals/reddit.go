@@ -42,7 +42,7 @@ func SearchReddit(gameTitle string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("reddit returned %d", resp.StatusCode)

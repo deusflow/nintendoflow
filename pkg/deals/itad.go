@@ -50,7 +50,7 @@ func FetchITADDeals(apiKey string) ([]Deal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ITAD request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("ITAD returned %d", resp.StatusCode)

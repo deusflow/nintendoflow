@@ -195,7 +195,7 @@ func parseRateLimitRetryDelay(err error) (time.Duration, bool) {
 
 func sanitize(text string) (string, error) {
 	text = strings.TrimSpace(text)
-	if strings.ToUpper(strings.Trim(text, ".,!? \n\r\t ")) == "SKIP" {
+	if strings.ToUpper(strings.Trim(text, ".,!? \n\r\t")) == "SKIP" {
 		return "", ErrSkipped
 	}
 	if runes := []rune(text); len(runes) > 900 {

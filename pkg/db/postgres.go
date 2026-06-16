@@ -19,7 +19,7 @@ func Connect(dsn string) (*sql.DB, error) {
 			return nil, fmt.Errorf("sql.Open: %w", err)
 		}
 		if pingErr := db.Ping(); pingErr != nil {
-			db.Close()
+			_ = db.Close()
 			err = pingErr
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
 			continue

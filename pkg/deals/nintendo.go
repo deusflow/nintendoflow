@@ -32,7 +32,7 @@ func FetchNintendoOfficialDeals() ([]Deal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nintendo official request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("nintendo official returned status %d", resp.StatusCode)
