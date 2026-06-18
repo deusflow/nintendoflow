@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/deuswork/nintendoflow/pkg/fetcher"
 )
 
 // SolrResponse represents the search response from Nintendo of Europe Solr API.
@@ -27,8 +29,15 @@ func FetchNintendoOfficialDeals() ([]Deal, error) {
 	// Querying discounted Nintendo Switch games, format JSON, limited to 150 rows.
 	apiURL := "https://search.nintendo-europe.com/en/select?q=*&fq=type:GAME%20AND%20price_has_discount_b:true%20AND%20system_type:nintendoswitch*&wt=json&rows=150"
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(apiURL)
+	cfg := fetcher.NewScraperConfig(15 * time.Second)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("nintendo official new request: %w", err)
+	}
+	req = fetcher.PrepareScraperRequest(req, cfg)
+
+	client := fetcher.NewScraperClient(cfg)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("nintendo official request: %w", err)
 	}

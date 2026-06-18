@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/deuswork/nintendoflow/pkg/fetcher"
 )
 
 const redditUserAgent = "script:nintendo_discount_bot:v1.0 (by /u/nintendoflow_bot)"
@@ -35,9 +37,12 @@ func SearchReddit(gameTitle string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("User-Agent", redditUserAgent)
+	cfg := fetcher.NewScraperConfig(10 * time.Second)
+	req = fetcher.PrepareScraperRequest(req, cfg)
+
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := fetcher.NewScraperClient(cfg)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

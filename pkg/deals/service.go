@@ -61,29 +61,8 @@ func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCu
 		allSourcesFailed = false
 	}
 
-	// -- Source 2: IsThereAnyDeal (ITAD) API --
-	if itadKey != "" {
-		itadDeals, err := FetchITADDeals(itadKey)
-		if err != nil {
-			slog.Warn("ITAD fetch failed", "error", err)
-		} else {
-			slog.Info("ITAD fetched", "count", len(itadDeals))
-			rawDeals = append(rawDeals, itadDeals...)
-			allSourcesFailed = false
-		}
-	} else {
-		slog.Info("ITAD API key missing, skipping source")
-	}
-
-	// -- Source 3: CheapShark API --
-	csDeals, err := FetchCheapSharkDeals()
-	if err != nil {
-		slog.Warn("CheapShark fetch failed", "error", err)
-	} else {
-		slog.Info("CheapShark fetched", "count", len(csDeals))
-		rawDeals = append(rawDeals, csDeals...)
-		allSourcesFailed = false
-	}
+	// Убрано использование ITAD и CheapShark, так как они возвращают PC-игры.
+	// Оставлен только Nintendo Official, который гарантирует 100% игры для Switch.
 
 	if allSourcesFailed {
 		return nil, fmt.Errorf("all deal sources failed to fetch")

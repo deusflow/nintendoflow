@@ -21,9 +21,14 @@ import (
 const interDomainDelay = 2 * time.Second
 
 var (
-	feedHTTPClient     = &http.Client{Timeout: 30 * time.Second}
-	redirectHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	feedHTTPClient     *http.Client
+	redirectHTTPClient *http.Client
 )
+
+func init() {
+	feedHTTPClient = NewScraperClient(NewScraperConfig(30 * time.Second))
+	redirectHTTPClient = NewScraperClient(NewScraperConfig(10 * time.Second))
+}
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
@@ -112,7 +117,8 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	cfg := NewScraperConfig(30 * time.Second)
+	req = PrepareScraperRequest(req, cfg)
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
 	if isRedditHost(req.URL) {
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")

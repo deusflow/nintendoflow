@@ -94,12 +94,39 @@ func main() {
 		return
 	}
 
-	if err := telegram.PostDealsDigest(bot, chatID, finalDeals); err != nil {
-		slog.Error("telegram deals post failed", "error", err)
-		return
-	}
+	if cfg.TestModerationMode {
+		// Create a dummy article to leverage the existing moderation pipeline
+		htmlBody := telegram.FormatDealsDigestHTML(finalDeals)
+		article := db.Article{
+			TitleRaw:    "Nintendo eShop Deals",
+			BodyUA:      htmlBody,
+			SourceType:  "deals",
+			ArticleType: "deals",
+			SourceName:  "Nintendo eShop",
+			Status:      db.StatusPending,
+			PublishedAt: &runStart,
+		}
 
-	slog.Info("deals digest posted successfully")
+		articleID, err := db.InsertArticle(ctx, database, article)
+		if err != nil {
+			slog.Error("insert deals pending article failed", "error", err)
+			return
+		}
+		article.ID = articleID
+
+		previewMessageID, err := telegram.SendModerationPreview(bot, chatID, article)
+		if err != nil {
+			slog.Error("send deals moderation preview failed", "error", err)
+			return
+		}
+		slog.Info("deals moderation preview sent", "article_id", article.ID, "msg_id", previewMessageID)
+	} else {
+		if err := telegram.PostDealsDigest(bot, chatID, finalDeals); err != nil {
+			slog.Error("telegram deals post failed", "error", err)
+			return
+		}
+		slog.Info("deals digest posted successfully")
+	}
 
 	// -- 6. Mark deals as published in DB --
 	for _, d := range finalDeals {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
@@ -24,9 +25,11 @@ func FetchArticleContent(ctx context.Context, rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; NintendoNewsBot/1.0)")
+	cfg := NewScraperConfig(15 * time.Second)
+	req = PrepareScraperRequest(req, cfg)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := NewScraperClient(cfg)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("http get: %w", err)
 	}

@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	redditHTTPClient = &http.Client{Timeout: redditJSONTimeout}
+	redditHTTPClient *http.Client
 
 	// OAuth token cache — shared across fetches within one bot run.
 	redditTokenMu      sync.Mutex
@@ -79,11 +79,17 @@ func FetchRedditJSON(ctx context.Context, f config.Feed) ([]Item, error) {
 		return nil, fmt.Errorf("reddit request: %w", err)
 	}
 	req.Header.Set("User-Agent", redditBotUserAgent)
+	cfg := NewScraperConfig(redditJSONTimeout)
+	req = PrepareScraperRequest(req, cfg)
+	
 	req.Header.Set("Accept", "application/json")
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
 
+	if redditHTTPClient == nil {
+		redditHTTPClient = NewScraperClient(cfg)
+	}
 	resp, err := redditHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("reddit http get: %w", err)
