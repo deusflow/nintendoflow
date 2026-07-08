@@ -453,3 +453,27 @@ func WasEventPostedRecently(ctx context.Context, db *sql.DB, eventTag string, ho
 	}
 	return count > 0, nil
 }
+
+// FetchRecentlyHighlightedGames returns a list of game titles previously posted as highlights.
+func FetchRecentlyHighlightedGames(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT title_raw 
+		FROM articles 
+		WHERE source_type = 'highlight' 
+		ORDER BY created_at DESC 
+		LIMIT 100`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []string
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, err
+		}
+		result = append(result, title)
+	}
+	return result, rows.Err()
+}

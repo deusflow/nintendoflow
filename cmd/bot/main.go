@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -135,6 +136,19 @@ func main() {
 	manager := ai.NewManager(providers, maxAICallsPerRun, aiCallDelay)
 	logStage("ai_provider_init", stageStart, runStart)
 	stageStart = time.Now()
+
+	// -- 4.5. Check command-line mode ------------------------------------
+	mode := "news"
+	for _, arg := range os.Args[1:] {
+		if arg == "highlight" || arg == "--mode=highlight" {
+			mode = "highlight"
+		}
+	}
+	if mode == "highlight" {
+		runHighlightMode(ctx, database, manager, cfg)
+		logFinalStats(0, 0, false, true, false, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+		return
+	}
 
 	// -- 5. Fetch RSS (parallel, 30s timeout) ------------------------------
 	fetchCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
@@ -590,6 +604,113 @@ func fallbackImageForType(articleType string) string {
 	}
 
 	return base + "/" + fileName
+}
+
+func runHighlightMode(ctx context.Context, database *sql.DB, manager *ai.Manager, cfg *config.Config) {
+	slog.Info("starting in highlight mode")
+
+	// 1. Fetch already posted games
+	previousGames, err := db.FetchRecentlyHighlightedGames(ctx, database)
+	if err != nil {
+		slog.Error("failed to fetch previously highlighted games", "error", err)
+		previousGames = []string{}
+	}
+
+	// 2. Build prompt for Gemini
+	exclusionList := strings.Join(previousGames, ", ")
+	if exclusionList == "" {
+		exclusionList = "None"
+	}
+
+	prompt := fmt.Sprintf(`Choose a legendary Nintendo game with Metacritic 85+ (Switch, Wii U, 3DS, Wii, DS, GameCube, N64, SNES, or NES) that is NOT in this exclusion list: [%s].
+Explain:
+1. Its creation history (who created it, interesting development details, prototypes).
+2. What made it so good (gameplay loop, art style, music, design decisions).
+3. Why it became a masterpiece and achieved high ratings.
+
+Write the post in Ukrainian, formatted in a premium style:
+- Catchy title (with game name, platform, release year and Metacritic score).
+- Clean bullet points (using '•') for easy reading.
+- Maximum 1-2 thematic emojis.
+- Keep it engaging, educational, and relatively brief (under 1200 characters).
+- Provide the game name in the first line in format: 'GAME: [Exact English Game Name]'. Do not prefix this line with anything else. Example:
+GAME: Super Mario Odyssey
+`, exclusionList)
+
+	rewritten, err := manager.Generate(ctx, prompt)
+	if err != nil {
+		slog.Error("AI highlight generation failed", "error", err)
+		return
+	}
+
+	// 3. Parse AI response
+	lines := strings.Split(rewritten, "\n")
+	gameTitle := "Legendary Nintendo Game"
+	cleanBodyLines := []string{}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "GAME:") {
+			gameTitle = strings.TrimSpace(strings.TrimPrefix(line, "GAME:"))
+			continue
+		}
+		cleanBodyLines = append(cleanBodyLines, line)
+	}
+	cleanBody := strings.TrimSpace(strings.Join(cleanBodyLines, "\n"))
+
+	// 4. Create and insert article
+	now := time.Now()
+	article := db.Article{
+		SourceURL:   "https://www.nintendo.com/masterpiece/" + urlSafeName(gameTitle),
+		URLHash:     dedup.HashURL("https://www.nintendo.com/masterpiece/" + urlSafeName(gameTitle)),
+		TitleHash:   dedup.HashTitle(gameTitle + " Highlight"),
+		ContentHash: dedup.HashTitle(cleanBody),
+		TitleRaw:    gameTitle,
+		BodyUA:      cleanBody,
+		SourceName:  "Nintendo Masterpiece",
+		SourceType:  "highlight",
+		ArticleType: "insight",
+		Score:       99,
+		Status:      db.StatusPending,
+		PublishedAt: &now,
+	}
+
+	articleID, err := db.InsertArticle(ctx, database, article)
+	if err != nil {
+		slog.Error("insert highlight article failed", "error", err)
+		return
+	}
+	article.ID = articleID
+
+	// 5. Send moderation preview
+	testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
+	if err != nil {
+		slog.Error("telegram bot init failed", "error", err)
+		return
+	}
+
+	previewChatID := cfg.TestAdminChatID
+	if strings.TrimSpace(previewChatID) == "" {
+		previewChatID = cfg.TestChannelID
+	}
+
+	previewMessageID, err := telegram.SendModerationPreview(testBot, previewChatID, article)
+	if err != nil {
+		slog.Error("send highlight moderation preview failed", "error", err, "article_id", article.ID)
+		return
+	}
+
+	slog.Info("highlight moderation preview sent", "article_id", article.ID, "preview_message_id", previewMessageID)
+}
+
+func urlSafeName(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 func logStage(name string, stageStart, runStart time.Time) {

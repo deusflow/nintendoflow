@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -38,6 +39,15 @@ func FormatDealsDigestHTML(finalDeals []deals.Deal) string {
 		}
 		sb.WriteString("\n")
 	}
+
+	// Добавим реферальные ссылки Eneba для монетизации
+	enebaID := os.Getenv("ENEBA_AFFILIATE_ID")
+	if enebaID == "" {
+		enebaID = "deusflow"
+	}
+	sb.WriteString("🔌 <b>Придбати карти поповнення eShop:</b>\n")
+	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-poland-pln?af_id=%s\">Польща (PLN)</a> 🇵🇱\n", enebaID))
+	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-united-states-usd?af_id=%s\">США (USD)</a> 🇺🇸\n", enebaID))
 
 	return strings.TrimSpace(sb.String())
 }
