@@ -71,7 +71,7 @@ func WrapWithScraperAPI(targetURL string, scraperAPIKey string) string {
 	}
 
 	// Example using scraperapi.com
-	u, err := url.Parse("http://api.scraperapi.com")
+	u, err := url.Parse("https://api.scraperapi.com")
 	if err != nil {
 		return targetURL
 	}

@@ -623,18 +623,22 @@ func runHighlightMode(ctx context.Context, database *sql.DB, manager *ai.Manager
 	}
 
 	prompt := fmt.Sprintf(`Choose a legendary Nintendo game with Metacritic 85+ (Switch, Wii U, 3DS, Wii, DS, GameCube, N64, SNES, or NES) that is NOT in this exclusion list: [%s].
-Explain:
-1. Its creation history (who created it, interesting development details, prototypes).
-2. What made it so good (gameplay loop, art style, music, design decisions).
-3. Why it became a masterpiece and achieved high ratings.
 
-Write the post in Ukrainian, formatted in a premium style:
-- Catchy title (with game name, platform, release year and Metacritic score).
-- Clean bullet points (using '•') for easy reading.
-- Maximum 1-2 thematic emojis.
-- Keep it engaging, educational, and relatively brief (under 1200 characters).
-- Provide the game name in the first line in format: 'GAME: [Exact English Game Name]'. Do not prefix this line with anything else. Example:
-GAME: Super Mario Odyssey
+Write an engaging, emotional storytelling post in Ukrainian about this game, acting as a passionate gaming historian. 
+Tell it as a compelling story rather than a dry list of facts:
+1. The human drama/creative struggle during creation (risks, prototypes, genius of the creators like Miyamoto, Aonuma, etc.).
+2. The gameplay magic, art, and music that touched players' hearts.
+3. Why this specific game is a timeless masterpiece and how it earned its status and high scores.
+
+Style and formatting rules:
+- Factual and accurate history only (no made-up rumors or fake facts).
+- High emotional connection and passion in writing (make the reader want to play or replay it immediately).
+- Catchy title (with game name, platform, release year, and Metacritic score).
+- Do NOT use dry bullet points if they ruin the flow; instead use clean, readable paragraphs with bold key phrases.
+- Max 1-2 thematic emojis.
+- Keep it under 1400 characters to fit Telegram limits.
+- The very first line of the output MUST strictly be in this format: 'GAME: [Exact English Game Name]'. Example:
+GAME: The Legend of Zelda: Breath of the Wild
 `, exclusionList)
 
 	rewritten, err := manager.Generate(ctx, prompt)

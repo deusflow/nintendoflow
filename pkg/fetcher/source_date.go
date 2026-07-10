@@ -22,9 +22,12 @@ func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, 
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; NintendoNewsBot/1.0)")
 
-	resp, err := http.DefaultClient.Do(req)
+	cfg := NewScraperConfig(15 * time.Second)
+	req = PrepareScraperRequest(req, cfg)
+
+	client := NewScraperClient(cfg)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
