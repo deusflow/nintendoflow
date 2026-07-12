@@ -622,23 +622,26 @@ func runHighlightMode(ctx context.Context, database *sql.DB, manager *ai.Manager
 		exclusionList = "None"
 	}
 
-	prompt := fmt.Sprintf(`Choose a legendary Nintendo game with Metacritic 85+ (Switch, Wii U, 3DS, Wii, DS, GameCube, N64, SNES, or NES) that is NOT in this exclusion list: [%s].
+	prompt := fmt.Sprintf(`Choose a legendary, critically acclaimed Nintendo game with Metacritic 85+ (from NES, SNES, N64, GameCube, Wii, DS, 3DS, Wii U, or Switch eras) that is NOT in this exclusion list: [%s].
 
-Write an engaging, emotional storytelling post in Ukrainian about this game, acting as a passionate gaming historian. 
-Tell it as a compelling story rather than a dry list of facts:
-1. The human drama/creative struggle during creation (risks, prototypes, genius of the creators like Miyamoto, Aonuma, etc.).
-2. The gameplay magic, art, and music that touched players' hearts.
-3. Why this specific game is a timeless masterpiece and how it earned its status and high scores.
+Write a highly engaging, atmospheric, and emotional storytelling post in Ukrainian about this game, acting as a passionate gaming historian. 
+Tell it as a compelling narrative rather than a dry list of facts.
 
-Style and formatting rules:
-- Factual and accurate history only (no made-up rumors or fake facts).
-- High emotional connection and passion in writing (make the reader want to play or replay it immediately).
-- Catchy title (with game name, platform, release year, and Metacritic score).
-- Do NOT use dry bullet points if they ruin the flow; instead use clean, readable paragraphs with bold key phrases.
-- Max 1-2 thematic emojis.
-- Keep it under 1400 characters to fit Telegram limits.
+Structure of the post:
+1. **Title**: Start the narrative with a catchy title enclosed in <b> tags (e.g. <b>Super Mario 64: Безчасна Класика (N64, 1996, 94)</b>). Do not write "Title:" or "Заголовок:".
+2. **Introduction**: A cinematic hook that sets the scene and describes the gaming landscape of that era.
+3. **The Creative Struggle / Development Drama**: The actual challenges, breakthroughs, and human stories during development. Detail the vision of the key creators (e.g. Shigeru Miyamoto, Takashi Tezuka, Eiji Aonuma, Koji Kondo).
+4. **The Magic & Innovation**: Explain the gameplay innovations, control mechanics, or musical score that touched players' hearts.
+5. **The Legacy**: Why this game is a timeless masterpiece and why it holds such high scores.
+
+CRITICAL RULES for quality and accuracy:
+- **Zero Hallucinations**: You must only use 100%% verified historical facts. Never guess or invent details.
+- **Strict Name Check**: Verify spelling of Japanese creators. Example: Shigeru Miyamoto is Шігеру Міямото, Koji Kondo is Коджі Кондо, Takashi Tezuka is Такаші Тедзука, Yoshio Sakamoto is Йошіо Сакамото. If you are unsure of any name, refer to them as "Nintendo" or "команда розробників". Never invent names like "Miyatmo" or "Miyazaki" for Mario games.
+- **No Typos**: Ensure high-quality Ukrainian language with zero mixed alphabets or spelling errors (do not write "безčasовий").
+- **Rich Content**: The text should be detailed and educational, not a 3-sentence summary. Keep it between 1600 and 2200 characters.
+- **Formatting**: CRITICAL! DO NOT USE Markdown (like **text**). You MUST use HTML tags: <b>text</b> for bold and <i>text</i> for italics. Use clean paragraphs, and a maximum of 2 thematic emojis. Do not use dry bullet points if they break the narrative flow.
 - The very first line of the output MUST strictly be in this format: 'GAME: [Exact English Game Name]'. Example:
-GAME: The Legend of Zelda: Breath of the Wild
+GAME: Super Mario 64
 `, exclusionList)
 
 	rewritten, err := manager.Generate(ctx, prompt)

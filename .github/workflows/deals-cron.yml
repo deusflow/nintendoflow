@@ -31,4 +31,7 @@ jobs:
           TEST_MODERATION_MODE: "true"
           ITAD_API_KEY: ${{ secrets.ITAD_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENEBA_AFFILIATE_ID: ${{ secrets.ENEBA_AFFILIATE_ID }}
+          SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: ./deals-bot

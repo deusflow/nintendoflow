@@ -237,6 +237,8 @@ func buildCaption(article *db.Article, maxLen int) string {
 		prefix = "📢 <b>ОФІЦІЙНО</b>\n\n"
 	case "insider":
 		prefix = "🕵️ <i>Інсайд</i>\n\n"
+	case "highlight":
+		prefix = "⭐️ <b>ШЕДЕВР ДНЯ</b>\n\n"
 	default:
 		// For aggregators and other sources, use the AI-determined article type.
 		switch article.ArticleType {

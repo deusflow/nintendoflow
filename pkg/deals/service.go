@@ -68,7 +68,7 @@ func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCu
 		return nil, fmt.Errorf("all deal sources failed to fetch")
 	}
 
-	// --- Step 1.1: Merge and deduplicate deals by title ---
+	// --- Step 1.1: Deduplicate deals by title ---
 	merged := make(map[string]Deal)
 	for _, d := range rawDeals {
 		norm := normalizeTitle(d.Title)
@@ -81,47 +81,18 @@ func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCu
 			merged[norm] = d
 			continue
 		}
-
-		// Prefer non-zero Metacritic score
-		if existing.Metacritic == 0 && d.Metacritic > 0 {
-			existing.Metacritic = d.Metacritic
+		
+		// If duplicate from same source, prefer the cheaper one
+		if d.NewPrice < existing.NewPrice {
+			merged[norm] = d
 		}
-
-		// Prefer EUR/DKK (€/kr) over USD ($)
-		isUSD1 := existing.Currency == "$" || existing.Source == "CheapShark"
-		isUSD2 := d.Currency == "$" || d.Source == "CheapShark"
-
-		if isUSD1 && !isUSD2 {
-			existing.OldPrice = d.OldPrice
-			existing.NewPrice = d.NewPrice
-			existing.Currency = d.Currency
-			existing.Cut = d.Cut
-			existing.URL = d.URL
-			existing.Source = d.Source + "+" + existing.Source
-		} else if !isUSD1 && isUSD2 {
-			existing.Source = existing.Source + "+" + d.Source
-		} else {
-			// If both are same, prefer NintendoOfficial or ITAD over CheapShark
-			if existing.Source == "CheapShark" && d.Source != "CheapShark" {
-				existing.OldPrice = d.OldPrice
-				existing.NewPrice = d.NewPrice
-				existing.Currency = d.Currency
-				existing.Cut = d.Cut
-				existing.URL = d.URL
-				existing.Source = d.Source + "+" + existing.Source
-			} else {
-				existing.Source = existing.Source + "+" + d.Source
-			}
-		}
-
-		merged[norm] = existing
 	}
 
 	var allDeals []Deal
 	for _, d := range merged {
 		allDeals = append(allDeals, d)
 	}
-	slog.Info("merged deals total count", "count", len(allDeals))
+	slog.Info("deals after deduplication", "count", len(allDeals))
 
 	// --- Step 2: Filter by minimum discount % and metacritic ---
 	var filtered []Deal

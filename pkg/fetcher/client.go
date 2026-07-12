@@ -85,6 +85,9 @@ func WrapWithScraperAPI(targetURL string, scraperAPIKey string) string {
 }
 
 // PrepareScraperRequest applies anti-bot measures to the request (ScraperAPI + random UA).
+// It only overrides the User-Agent if it's unset or still has Go's default value.
+// Callers who set a custom UA (e.g. Reddit bot UA) before calling this function
+// will keep their UA intact.
 func PrepareScraperRequest(req *http.Request, cfg ScraperConfig) *http.Request {
 	if cfg.ScraperAPI != "" {
 		wrappedURL := WrapWithScraperAPI(req.URL.String(), cfg.ScraperAPI)
@@ -94,7 +97,11 @@ func PrepareScraperRequest(req *http.Request, cfg ScraperConfig) *http.Request {
 		}
 	}
 
-	if req.Header.Get("User-Agent") == "" || strings.Contains(req.Header.Get("User-Agent"), "Go-http-client") || strings.Contains(req.Header.Get("User-Agent"), "NintendoNewsBot") || strings.Contains(req.Header.Get("User-Agent"), "Mozilla/5.0 (Windows NT 10.0") {
+	currentUA := req.Header.Get("User-Agent")
+	needsOverride := currentUA == "" ||
+		strings.HasPrefix(currentUA, "Go-http-client") ||
+		strings.Contains(currentUA, "NintendoNewsBot")
+	if needsOverride {
 		req.Header.Set("User-Agent", RandomUserAgent())
 	}
 

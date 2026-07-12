@@ -36,4 +36,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GH_MODELS_API_KEY: ${{ secrets.GH_MODELS_API_KEY }}
           AI_CONFIG_PATH: "ai_config.json"
+          # Anti-ban
+          SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: ./bot

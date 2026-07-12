@@ -198,8 +198,8 @@ func sanitize(text string) (string, error) {
 	if strings.ToUpper(strings.Trim(text, ".,!? \n\r\t")) == "SKIP" {
 		return "", ErrSkipped
 	}
-	if runes := []rune(text); len(runes) > 900 {
-		text = string(runes[:870]) + "..."
+	if runes := []rune(text); len(runes) > 4000 {
+		text = string(runes[:3900]) + "..."
 	}
 	return text, nil
 }

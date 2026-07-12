@@ -220,8 +220,8 @@ func buildModerationPreviewText(article db.Article) string {
 		body = "(empty body)"
 	}
 	bodyRunes := []rune(body)
-	if len(bodyRunes) > 700 {
-		body = string(bodyRunes[:700]) + "..."
+	if len(bodyRunes) > 1800 {
+		body = string(bodyRunes[:1800]) + "..."
 	}
 
 	typeLabel := articleTypeLabel(article.ArticleType)
