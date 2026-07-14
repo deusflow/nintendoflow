@@ -17,9 +17,9 @@ import (
 
 var telegramHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
-// PostArticle sends an article to the Telegram channel.
+// PostArticle sends an article to the Telegram channel and returns its message ID.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
-func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) error {
+func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (int, error) {
 	videoURL := strings.TrimSpace(article.VideoURL)
 	imageURL := strings.TrimSpace(article.ImageURL)
 	sourceURL := strings.TrimSpace(article.SourceURL)
@@ -51,32 +51,32 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 					if markup != nil {
 						video.ReplyMarkup = markup
 					}
-					_, errSend := bot.Send(video)
+					sentMsg, errSend := bot.Send(video)
 					_ = stream.Close()
 					if errSend == nil {
-						return nil
+						return sentMsg.MessageID, nil
 					} else {
 						slog.Warn("youtube video upload failed, fallback to native link preview", "article_id", article.ID, "error", errSend)
-						textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
+						msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
 						if textErr == nil {
-							return nil
+							return msgID, nil
 						}
 						slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 					}
 				} else {
 					_ = stream.Close()
 					slog.Info("youtube video too large, fallback to native link preview", "article_id", article.ID, "size", size)
-					textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
+					msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
 					if textErr == nil {
-						return nil
+						return msgID, nil
 					}
 					slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 				}
 			} else {
 				slog.Warn("youtube download failed, fallback to native link preview", "error", err)
-				textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
+				msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
 				if textErr == nil {
-					return nil
+					return msgID, nil
 				}
 				slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 			}
@@ -93,8 +93,8 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 			if markup != nil {
 				video.ReplyMarkup = markup
 			}
-			if _, err := bot.Send(video); err == nil {
-				return nil
+			if sentMsg, err := bot.Send(video); err == nil {
+				return sentMsg.MessageID, nil
 			}
 		}
 	}
@@ -111,8 +111,8 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 	if markup != nil {
 		photo.ReplyMarkup = markup
 	}
-	if _, err := bot.Send(photo); err == nil {
-		return nil
+	if sentMsg, err := bot.Send(photo); err == nil {
+		return sentMsg.MessageID, nil
 	} else {
 		slog.Warn("telegram publish send photo failed", "article_id", article.ID, "image", imageURL, "error", err)
 	}
@@ -123,10 +123,11 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) err
 	if markup != nil {
 		msg.ReplyMarkup = markup
 	}
-	if _, err := bot.Send(msg); err != nil {
-		return fmt.Errorf("telegram sendMessage: %w", err)
+	sentMsg, err := bot.Send(msg)
+	if err != nil {
+		return 0, fmt.Errorf("telegram sendMessage: %w", err)
 	}
-	return nil
+	return sentMsg.MessageID, nil
 }
 
 func getFallbackImageURL(articleType string) string {
@@ -145,9 +146,7 @@ func getFallbackImageURL(articleType string) string {
 	}
 }
 
-
-
-func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, previewURL string, markup *tgbotapi.InlineKeyboardMarkup) error {
+func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, previewURL string, markup *tgbotapi.InlineKeyboardMarkup) (int, error) {
 	type rawLinkPreview struct {
 		IsDisabled       bool   `json:"is_disabled"`
 		URL              string `json:"url,omitempty"`
@@ -179,21 +178,30 @@ func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, p
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", bot.Token)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := telegramHTTPClient.Do(httpReq)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("telegram raw send failed %d: %s", resp.StatusCode, string(respBody))
+		return 0, fmt.Errorf("telegram raw send failed %d: %s", resp.StatusCode, string(respBody))
 	}
-	return nil
+
+	var respData struct {
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return 0, fmt.Errorf("decode sendMessage response: %w", err)
+	}
+	return respData.Result.MessageID, nil
 }
 
 func buildInlineKeyboard(sourceURL, sourceName, videoURL string) *tgbotapi.InlineKeyboardMarkup {

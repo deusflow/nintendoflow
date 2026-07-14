@@ -17,6 +17,7 @@ import (
 
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
+	"github.com/deuswork/nintendoflow/pkg/threads"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -538,12 +539,17 @@ func publishPendingArticle(ctx context.Context, database *sql.DB, bot *tgbotapi.
 	if err != nil {
 		return err
 	}
-	if err := telegram.PostArticle(bot, channelID, article); err != nil {
+	msgID, err := telegram.PostArticle(bot, channelID, article)
+	if err != nil {
 		return err
 	}
 	if err := db.MarkPosted(ctx, database, articleID); err != nil {
 		return err
 	}
+
+	// Cross-post to Threads if credentials are provided in the environment
+	threads.MaybeCrossPost(ctx, article.TitleRaw, msgID)
+
 	return nil
 }
 

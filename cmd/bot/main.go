@@ -22,6 +22,7 @@ import (
 	"github.com/deuswork/nintendoflow/pkg/fetcher"
 	"github.com/deuswork/nintendoflow/pkg/scorer"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
+	"github.com/deuswork/nintendoflow/pkg/threads"
 )
 
 const (
@@ -482,7 +483,8 @@ func main() {
 		return
 	}
 
-	if err := telegram.PostArticle(bot, cfg.TelegramChannelID, article); err != nil {
+	msgID, err := telegram.PostArticle(bot, cfg.TelegramChannelID, article)
+	if err != nil {
 		slog.Error("telegram post failed", "error", err, "article_id", article.ID)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
@@ -493,6 +495,9 @@ func main() {
 	}
 	posted = true
 	logStage("telegram_post", stageStart, runStart)
+
+	// Cross-post to Threads if configured
+	threads.MaybeCrossPost(ctx, article.TitleRaw, msgID)
 
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 }

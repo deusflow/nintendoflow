@@ -39,4 +39,7 @@ jobs:
           # Anti-ban
           SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+          # Threads Cross-posting
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          TELEGRAM_CHANNEL_USERNAME: "deusflow"
         run: ./bot
