@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/deuswork/nintendoflow/pkg/db"
 )
 
 type ContainerResponse struct {
@@ -30,7 +33,6 @@ func PostThread(ctx context.Context, text string) (string, error) {
 	}
 
 	// Step 1: Create a container for the text post
-	// Using /me/threads is default for the token owner
 	apiURL := "https://graph.threads.net/v1.0/me/threads"
 	
 	q := url.Values{}
@@ -96,32 +98,82 @@ func PostThread(ctx context.Context, text string) (string, error) {
 	return pr.ID, nil
 }
 
-// FormatThread formats the article title and Telegram channel message link into a Threads post.
-// Respects the 500-character limit of Threads and limits hashtags to 1 as per recommended guidelines.
-func FormatThread(title, tgChannelUsername string, tgMessageID int) string {
+// htmlTagRe matches any HTML tag including self-closing and tags with attributes.
+var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+// stripHTML removes all HTML tags and normalizes whitespace for Threads (plain text only).
+func stripHTML(s string) string {
+	s = htmlTagRe.ReplaceAllString(s, "")
+	// Normalize excessive newlines that may result from removed block tags.
+	s = regexp.MustCompile(`\n{3,}`).ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
+}
+
+// FormatThread formats the article content into a Threads post.
+// Respects the 500-character limit of Threads and implements smart content length strategy.
+func FormatThread(article db.Article, tgChannelUsername string, tgMessageID int) string {
 	var tgLink string
 	if tgChannelUsername != "" && tgMessageID > 0 {
 		username := strings.TrimPrefix(tgChannelUsername, "@")
 		tgLink = fmt.Sprintf("https://t.me/%s/%d", username, tgMessageID)
 	}
 
-	// Safe limit for Threads is 500 characters.
-	// tgLink takes ~30 chars, static text "🎮 \n\nЧитати далі: \n\n#Nintendo" takes ~40 chars.
-	// Safe title budget = 500 - 70 = 430 characters.
-	titleRunes := []rune(title)
-	if len(titleRunes) > 420 {
-		title = string(titleRunes[:417]) + "..."
+	if article.BodyThreads != "" {
+		bodyClean := stripHTML(article.BodyThreads)
+		if tgLink != "" {
+			return fmt.Sprintf("%s\n\n👉 %s", bodyClean, tgLink)
+		}
+		return bodyClean
+	}
+
+	hashtag := "#Nintendo"
+
+	// Scenario 1: Highlight post (Masterpiece) -> Too long for a single post. Post a premium teaser.
+	if article.SourceType == "highlight" {
+		titleClean := stripHTML(article.TitleRaw)
+		return fmt.Sprintf("⭐️ %s — легендарний шедевр від Nintendo!\n\nУ нашому Telegram-каналі вийшла детальна історія створення цієї гри, її секрети та шлях до оцінки 95+ на Metacritic. Читайте повну історію за посиланням:\n\n👉 %s\n\n%s", 
+			titleClean, tgLink, hashtag)
+	}
+
+	// Scenario 2: Deals Digest -> Post a custom teaser for discounts
+	if article.ArticleType == "deals" || article.SourceType == "deals" {
+		return fmt.Sprintf("🛒 Свіжі знижки в Nintendo eShop!\n\nЗібрали найкращі пропозиції на ігри для Switch з Metacritic 80+ та реферальними картками поповнення. Переглядайте весь список та купуйте вигідно за посиланням:\n\n👉 %s\n\n%s", 
+			tgLink, hashtag)
+	}
+
+	// Scenario 3: Regular News -> Try to post the full text if it fits in 500 characters
+	bodyClean := stripHTML(article.BodyUA)
+	prefix := "🎮 "
+	
+	var suffix string
+	if tgLink != "" {
+		suffix = fmt.Sprintf("\n\nЧитати далі: %s\n\n%s", tgLink, hashtag)
+	} else {
+		suffix = "\n\n" + hashtag
+	}
+
+	totalRunes := len([]rune(prefix)) + len([]rune(bodyClean)) + len([]rune(suffix))
+	if totalRunes <= 500 {
+		return prefix + bodyClean + suffix
+	}
+
+	// Scenario 4: News is too long -> Post a teaser with Title and direct link
+	titleClean := stripHTML(article.TitleRaw)
+	titleRunes := []rune(titleClean)
+	// Safe budget for title: 500 - 30 - 30 = 440 chars
+	if len(titleRunes) > 400 {
+		titleClean = string(titleRunes[:397]) + "..."
 	}
 
 	if tgLink != "" {
-		return fmt.Sprintf("🎮 %s\n\nЧитати далі: %s\n\n#Nintendo", title, tgLink)
+		return fmt.Sprintf("🎮 %s\n\nЧитати далі у нашому Telegram: %s\n\n%s", titleClean, tgLink, hashtag)
 	}
 	
-	return fmt.Sprintf("🎮 %s\n\n#Nintendo", title)
+	return fmt.Sprintf("🎮 %s\n\n%s", titleClean, hashtag)
 }
 
 // MaybeCrossPost posts a thread for the given article if Threads credentials are set.
-func MaybeCrossPost(ctx context.Context, title string, messageID int) {
+func MaybeCrossPost(ctx context.Context, article db.Article, messageID int) {
 	accessToken := strings.TrimSpace(os.Getenv("THREADS_ACCESS_TOKEN"))
 	if accessToken == "" {
 		slog.Debug("threads: access token is empty, skipping cross-post")
@@ -133,7 +185,7 @@ func MaybeCrossPost(ctx context.Context, title string, messageID int) {
 		tgUsername = "deusflow"
 	}
 
-	threadText := FormatThread(title, tgUsername, messageID)
+	threadText := FormatThread(article, tgUsername, messageID)
 	slog.Info("threads: preparing to cross-post to Threads", "text", threadText)
 
 	postID, err := PostThread(ctx, threadText)

@@ -12,10 +12,12 @@ import (
 )
 
 const (
-	moderationActionPublish = "publish"
+	moderationActionPubTG   = "pub_tg"
+	moderationActionPubTH   = "pub_th"
 	moderationActionEdit    = "edit"
 	moderationActionReject  = "reject"
 	moderationActionCancel  = "cancel"
+	moderationActionNoop    = "noop"
 )
 
 func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Article) (int, error) {
@@ -24,7 +26,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	if err != nil {
 		return 0, err
 	}
-	markup := moderationKeyboard(article.ID, strings.TrimSpace(article.VideoURL))
+	markup := moderationKeyboard(article)
 
 	previewImage := strings.TrimSpace(article.ImageURL)
 	if previewImage == "" && strings.TrimSpace(article.VideoURL) == "" {
@@ -157,7 +159,7 @@ func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, te
 }
 
 func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
-	markup := moderationKeyboard(article.ID, strings.TrimSpace(article.VideoURL))
+	markup := moderationKeyboard(article)
 	if err := editModerationMessage(bot, chatID, messageID, buildModerationPreviewText(article), &markup); err != nil {
 		return fmt.Errorf("telegram edit moderation preview: %w", err)
 	}
@@ -175,7 +177,7 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	}
 	action := parts[1]
 	switch action {
-	case moderationActionPublish, moderationActionEdit, moderationActionReject, moderationActionCancel:
+	case moderationActionPubTG, moderationActionPubTH, moderationActionEdit, moderationActionReject, moderationActionCancel, moderationActionNoop:
 	default:
 		return "", 0, fmt.Errorf("unsupported callback action")
 	}
@@ -186,17 +188,30 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	return action, id, nil
 }
 
-func moderationKeyboard(articleID int, videoURL string) tgbotapi.InlineKeyboardMarkup {
+func moderationKeyboard(article db.Article) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Action row
+	btnTG := tgbotapi.NewInlineKeyboardButtonData("TG: Publish", fmt.Sprintf("mod:%s:%d", moderationActionPubTG, article.ID))
+	if article.PostedTG {
+		btnTG = tgbotapi.NewInlineKeyboardButtonData("TG: ✅", fmt.Sprintf("mod:%s:%d", moderationActionNoop, article.ID))
+	}
+
+	btnTH := tgbotapi.NewInlineKeyboardButtonData("Threads: Publish", fmt.Sprintf("mod:%s:%d", moderationActionPubTH, article.ID))
+	if article.PostedThreads {
+		btnTH = tgbotapi.NewInlineKeyboardButtonData("Threads: ✅", fmt.Sprintf("mod:%s:%d", moderationActionNoop, article.ID))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(btnTG, btnTH))
+
+	// Edit and Reject row
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Publish", fmt.Sprintf("mod:%s:%d", moderationActionPublish, articleID)),
-		tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, articleID)),
-		tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, articleID)),
+		tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, article.ID)),
+		tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, article.ID)),
 	))
 
 	// Link row
+	videoURL := strings.TrimSpace(article.VideoURL)
 	if videoURL != "" {
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("🎥 Дивитися відео", videoURL),

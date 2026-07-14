@@ -114,8 +114,8 @@ func main() {
 		}
 		article.ID = articleID
 
-		if err := db.UpdateBodyUA(ctx, database, articleID, htmlBody, "deals"); err != nil {
-			slog.Error("update deals body_ua failed", "error", err)
+		if err := db.UpdateBodies(ctx, database, articleID, htmlBody, "", "deals"); err != nil {
+			slog.Error("update deals bodies failed", "error", err)
 			return
 		}
 

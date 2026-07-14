@@ -191,21 +191,61 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	}
 
 	switch action {
-	case "publish":
-		slog.Info("handleCallback: publishing article", "article_id", articleID)
-		if err := publishPendingArticle(ctx, database, bot, testChannelID, articleID); err != nil {
-			return fmt.Errorf("publish article %d: %w", articleID, err)
+	case "pub_tg":
+		slog.Info("handleCallback: publishing article to TG", "article_id", articleID)
+		if err := publishPendingArticleTG(ctx, database, bot, testChannelID, articleID); err != nil {
+			return fmt.Errorf("publish TG article %d: %w", articleID, err)
 		}
 		if err := db.DeleteModerationEditSessionsByArticle(ctx, database, articleID); err != nil {
 			slog.Warn("handleCallback: cleanup edit sessions after publish", "error", err, "article_id", articleID)
 		}
-		if cb.Message != nil {
-			if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published ✅"); err != nil {
-				slog.Warn("handleCallback: edit message after publish failed", "error", err)
+		
+		article, _ := db.GetArticleByID(ctx, database, articleID)
+		if article.PostedTG && article.PostedThreads {
+			if cb.Message != nil {
+				if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published ✅"); err != nil {
+					slog.Warn("handleCallback: edit message after publish failed", "error", err)
+				}
+			}
+		} else {
+			if cb.Message != nil {
+				_ = telegram.EditModerationPreview(bot, cb.Message.Chat.ID, cb.Message.MessageID, article)
 			}
 		}
-		answerCallback(bot, cb.ID, "Published")
-		slog.Info("handleCallback: article published", "article_id", articleID)
+		answerCallback(bot, cb.ID, "Published to Telegram")
+		slog.Info("handleCallback: article published to TG", "article_id", articleID)
+
+	case "pub_th":
+		slog.Info("handleCallback: publishing article to Threads", "article_id", articleID)
+		
+		article, err := db.GetArticleByID(ctx, database, articleID)
+		if err != nil {
+			return fmt.Errorf("get article for threads %d: %w", articleID, err)
+		}
+		
+		if !article.PostedTG {
+			answerCallback(bot, cb.ID, "Please publish to Telegram first so a link can be generated!")
+			return nil
+		}
+		
+		if err := publishPendingArticleTH(ctx, database, article); err != nil {
+			return fmt.Errorf("publish Threads article %d: %w", articleID, err)
+		}
+		
+		article.PostedThreads = true
+		if article.PostedTG && article.PostedThreads {
+			if cb.Message != nil {
+				if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published ✅"); err != nil {
+					slog.Warn("handleCallback: edit message after publish failed", "error", err)
+				}
+			}
+		} else {
+			if cb.Message != nil {
+				_ = telegram.EditModerationPreview(bot, cb.Message.Chat.ID, cb.Message.MessageID, article)
+			}
+		}
+		answerCallback(bot, cb.ID, "Published to Threads")
+		slog.Info("handleCallback: article published to Threads", "article_id", articleID)
 
 	case "reject":
 		slog.Info("handleCallback: rejecting article", "article_id", articleID)
@@ -222,6 +262,9 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		}
 		answerCallback(bot, cb.ID, "Rejected")
 		slog.Info("handleCallback: article rejected", "article_id", articleID)
+	case "noop":
+		answerCallback(bot, cb.ID, "Already published!")
+		return nil
 
 	case "edit":
 		if cb.Message == nil {
@@ -534,21 +577,42 @@ func finalModerationStateText(status string) string {
 	}
 }
 
-func publishPendingArticle(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, channelID string, articleID int) error {
+func publishPendingArticleTG(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, channelID string, articleID int) error {
 	article, err := db.GetArticleByID(ctx, database, articleID)
 	if err != nil {
 		return err
 	}
+	if article.PostedTG {
+		return nil
+	}
+	
 	msgID, err := telegram.PostArticle(bot, channelID, article)
 	if err != nil {
 		return err
 	}
-	if err := db.MarkPosted(ctx, database, articleID); err != nil {
+	
+	if err := db.MarkPostedTG(ctx, database, articleID, msgID); err != nil {
 		return err
 	}
+	
+	if err := db.UpdateArticleStatus(ctx, database, articleID, db.StatusPublished); err != nil {
+		slog.Warn("failed to update article status to published", "article_id", articleID, "error", err)
+	}
 
+	return nil
+}
+
+func publishPendingArticleTH(ctx context.Context, database *sql.DB, article db.Article) error {
+	if article.PostedThreads {
+		return nil
+	}
+	
 	// Cross-post to Threads if credentials are provided in the environment
-	threads.MaybeCrossPost(ctx, article.TitleRaw, msgID)
+	threads.MaybeCrossPost(ctx, article, article.TgMessageID)
+	
+	if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
+		return err
+	}
 
 	return nil
 }

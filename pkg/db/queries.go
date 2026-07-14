@@ -27,18 +27,21 @@ type Article struct {
 	TitleRaw    string
 	TitleUA     string
 	BodyUA      string
+	BodyThreads string
 	VideoURL    string
 	ImageURL    string
 	SourceName  string
 	SourceType  string
 	ArticleType string
-	Score       int
-	PostedTG    bool
-	AIProvider  string
-	Status      string
-	EventTag    string
-	PublishedAt *time.Time
-	CreatedAt   time.Time
+	Score         int
+	PostedTG      bool
+	PostedThreads bool
+	TgMessageID   int
+	AIProvider    string
+	Status        string
+	EventTag      string
+	PublishedAt   *time.Time
+	CreatedAt     time.Time
 }
 
 type ModerationEditSession struct {
@@ -83,8 +86,8 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	var a Article
 	err := db.QueryRowContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
-		       COALESCE(body_ua, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
-		       posted_tg, COALESCE(ai_provider, ''), COALESCE(status, ''), COALESCE(event_tag, ''), published_at, created_at
+		       COALESCE(body_ua, ''), COALESCE(body_threads, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
+		       posted_tg, posted_threads, tg_message_id, COALESCE(ai_provider, ''), COALESCE(status, ''), COALESCE(event_tag, ''), published_at, created_at
 		FROM articles
 		WHERE id=$1`, id).
 		Scan(
@@ -96,6 +99,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 			&a.TitleRaw,
 			&a.TitleUA,
 			&a.BodyUA,
+			&a.BodyThreads,
 			&a.VideoURL,
 			&a.ImageURL,
 			&a.SourceName,
@@ -103,6 +107,8 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 			&a.ArticleType,
 			&a.Score,
 			&a.PostedTG,
+			&a.PostedThreads,
+			&a.TgMessageID,
 			&a.AIProvider,
 			&a.Status,
 			&a.EventTag,
@@ -274,11 +280,11 @@ func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string
 	return result, nil
 }
 
-// UpdateBodyUA sets body_ua and ai_provider after rewrite.
-func UpdateBodyUA(ctx context.Context, db *sql.DB, id int, bodyUA, aiProvider string) error {
+// UpdateBodies sets body_ua, body_threads and ai_provider after rewrite.
+func UpdateBodies(ctx context.Context, db *sql.DB, id int, bodyUA, bodyThreads, aiProvider string) error {
 	_, err := db.ExecContext(ctx, `
-		UPDATE articles SET body_ua=$1, ai_provider=$2 WHERE id=$3`,
-		bodyUA, aiProvider, id)
+		UPDATE articles SET body_ua=$1, body_threads=$2, ai_provider=$3 WHERE id=$4`,
+		bodyUA, bodyThreads, aiProvider, id)
 	return err
 }
 
@@ -287,9 +293,15 @@ func UpdateBodyUAOnly(ctx context.Context, db *sql.DB, id int, bodyUA string) er
 	return err
 }
 
-// MarkPosted sets posted_tg = true.
-func MarkPosted(ctx context.Context, db *sql.DB, id int) error {
-	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE, status=$2 WHERE id=$1`, id, StatusPublished)
+// MarkPostedTG sets posted_tg = true and saves the tg_message_id.
+func MarkPostedTG(ctx context.Context, db *sql.DB, id int, tgMessageID int) error {
+	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE, tg_message_id=$2 WHERE id=$1`, id, tgMessageID)
+	return err
+}
+
+// MarkPostedThreads sets posted_threads = true.
+func MarkPostedThreads(ctx context.Context, db *sql.DB, id int) error {
+	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_threads=TRUE WHERE id=$1`, id)
 	return err
 }
 

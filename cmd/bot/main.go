@@ -372,11 +372,23 @@ func main() {
 	}
 	rewriteProvider := manager.LastProvider()
 	slog.Info("AI rewrite used", "provider", rewriteProvider)
-	articleType, cleanBody := ai.ParseTypedPost(rewritten)
-	if cleanBody == "" {
-		cleanBody = rewritten
+	
+	postData, parseErr := ai.ParseJSONPost(rewritten)
+	if parseErr != nil {
+		slog.Error("Failed to parse AI JSON, falling back to raw text", "error", parseErr, "raw", rewritten)
+		postData.TelegramHTML = sanitizeGeneratedBody(rewritten)
+		postData.Type = ai.ArticleTypeNews
 	}
-	cleanBody = sanitizeGeneratedBody(cleanBody)
+	
+	if postData.Skip {
+		slog.Info("AI explicitly skipped via JSON")
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+		return
+	}
+
+	articleType := postData.Type
+	cleanBody := sanitizeGeneratedBody(postData.TelegramHTML)
+	threadsBody := postData.ThreadsText
 
 	hypeCount := calculateHype(selected.item, items)
 	var hypeText string
@@ -407,6 +419,7 @@ func main() {
 		ContentHash: selected.item.ContentHash,
 		TitleRaw:    selected.item.Title,
 		BodyUA:      cleanBody,
+		BodyThreads: threadsBody,
 		VideoURL:    selected.item.VideoURL,
 		ImageURL:    selected.item.ImageURL,
 		SourceName:  selected.item.SourceName,
@@ -426,8 +439,8 @@ func main() {
 		}
 		article.ID = articleID
 
-		if err := db.UpdateBodyUA(ctx, database, article.ID, cleanBody, rewriteProvider); err != nil {
-			slog.Warn("update body_ua failed", "error", err)
+		if err := db.UpdateBodies(ctx, database, article.ID, cleanBody, threadsBody, rewriteProvider); err != nil {
+			slog.Warn("update bodies failed", "error", err)
 		}
 
 		testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
@@ -472,8 +485,8 @@ func main() {
 	}
 	article.ID = articleID
 
-	if err := db.UpdateBodyUA(ctx, database, article.ID, cleanBody, rewriteProvider); err != nil {
-		slog.Warn("update body_ua failed", "error", err)
+	if err := db.UpdateBodies(ctx, database, article.ID, cleanBody, threadsBody, rewriteProvider); err != nil {
+		slog.Warn("update bodies failed", "error", err)
 	}
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
@@ -490,14 +503,20 @@ func main() {
 		return
 	}
 
-	if err := db.MarkPosted(ctx, database, article.ID); err != nil {
-		slog.Warn("mark posted failed", "error", err)
+	if err := db.MarkPostedTG(ctx, database, article.ID, msgID); err != nil {
+		slog.Warn("mark posted tg failed", "error", err)
+	}
+	if err := db.UpdateArticleStatus(ctx, database, article.ID, db.StatusPublished); err != nil {
+		slog.Warn("failed to update article status to published", "article_id", article.ID, "error", err)
 	}
 	posted = true
 	logStage("telegram_post", stageStart, runStart)
 
 	// Cross-post to Threads if configured
-	threads.MaybeCrossPost(ctx, article.TitleRaw, msgID)
+	threads.MaybeCrossPost(ctx, article, msgID)
+	if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
+		slog.Warn("mark posted threads failed", "error", err)
+	}
 
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 }
@@ -693,8 +712,8 @@ GAME: Super Mario 64
 	article.ID = articleID
 
 	// Save the translated/generated body to the database so that it is not empty when approved.
-	if err := db.UpdateBodyUA(ctx, database, articleID, cleanBody, manager.LastProvider()); err != nil {
-		slog.Error("update highlight body_ua failed", "error", err)
+	if err := db.UpdateBodies(ctx, database, articleID, cleanBody, "", manager.LastProvider()); err != nil {
+		slog.Error("update highlight bodies failed", "error", err)
 		return
 	}
 

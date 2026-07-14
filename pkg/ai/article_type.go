@@ -1,6 +1,9 @@
 package ai
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	ArticleTypeInsight = "insight"
@@ -8,6 +11,37 @@ const (
 	ArticleTypeNews    = "news"
 	ArticleTypeOfftop  = "offtop"
 )
+
+type GeneratedPost struct {
+	Skip         bool   `json:"skip"`
+	Type         string `json:"type"`
+	TelegramHTML string `json:"telegram_html"`
+	ThreadsText  string `json:"threads_text"`
+}
+
+// ParseJSONPost extracts the JSON block from the text and parses it.
+// It handles potential markdown formatting blocks like ```json ... ```.
+func ParseJSONPost(text string) (GeneratedPost, error) {
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end < start {
+		// Attempt fallback parsing if JSON is completely missing but "SKIP" is there
+		if strings.Contains(strings.ToUpper(text), "SKIP") {
+			return GeneratedPost{Skip: true}, nil
+		}
+		return GeneratedPost{}, json.Unmarshal([]byte(text), &GeneratedPost{}) // return parsing error
+	}
+	
+	jsonStr := text[start : end+1]
+	var post GeneratedPost
+	err := json.Unmarshal([]byte(jsonStr), &post)
+	if err != nil {
+		return GeneratedPost{}, err
+	}
+	
+	post.Type = NormalizeArticleType(post.Type)
+	return post, nil
+}
 
 // ParseTypedPost extracts optional TYPE: marker and returns (type, body).
 // If marker is missing or invalid, type defaults to news and text is returned as-is.
