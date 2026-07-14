@@ -114,6 +114,11 @@ func main() {
 		}
 		article.ID = articleID
 
+		if err := db.UpdateBodyUA(ctx, database, articleID, htmlBody, "deals"); err != nil {
+			slog.Error("update deals body_ua failed", "error", err)
+			return
+		}
+
 		previewMessageID, err := telegram.SendModerationPreview(bot, chatID, article)
 		if err != nil {
 			slog.Error("send deals moderation preview failed", "error", err)

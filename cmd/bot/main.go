@@ -687,6 +687,12 @@ GAME: Super Mario 64
 	}
 	article.ID = articleID
 
+	// Save the translated/generated body to the database so that it is not empty when approved.
+	if err := db.UpdateBodyUA(ctx, database, articleID, cleanBody, manager.LastProvider()); err != nil {
+		slog.Error("update highlight body_ua failed", "error", err)
+		return
+	}
+
 	// 5. Send moderation preview
 	testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
 	if err != nil {
