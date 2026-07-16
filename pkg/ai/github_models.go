@@ -36,12 +36,22 @@ func NewGitHubModelsProvider(apiKey, model, baseURL string) *GitHubModelsProvide
 func (g *GitHubModelsProvider) Name() string { return "github-models-" + g.model }
 
 func (g *GitHubModelsProvider) Complete(ctx context.Context, prompt string) (string, error) {
+	messages := []map[string]string{}
+	parts := strings.Split(prompt, "=== КІНЕЦЬ ІНСТРУКЦІЙ ===")
+	if len(parts) == 2 {
+		messages = append(messages, map[string]string{"role": "system", "content": strings.TrimSpace(parts[0])})
+		messages = append(messages, map[string]string{"role": "user", "content": strings.TrimSpace(parts[1])})
+	} else {
+		messages = append(messages, map[string]string{"role": "user", "content": prompt})
+	}
+
 	payload := map[string]any{
-		"model": g.model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
+		"model":       g.model,
+		"messages":    messages,
 		"temperature": 1,
+		"response_format": map[string]string{
+			"type": "json_object",
+		},
 	}
 
 	jsonBody, err := json.Marshal(payload)
