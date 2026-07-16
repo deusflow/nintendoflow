@@ -682,31 +682,55 @@ Example JSON output:
 }
 `, exclusionList)
 
-	rewritten, err := manager.Generate(ctx, prompt)
-	if err != nil {
-		slog.Error("AI highlight generation failed", "error", err)
-		return
-	}
-
-	// 3. Parse AI response
-	// Find the JSON block
-	start := strings.Index(rewritten, "{")
-	end := strings.LastIndex(rewritten, "}")
-	if start == -1 || end == -1 || end < start {
-		slog.Error("failed to find JSON in AI response", "raw", rewritten)
-		return
-	}
-	
-	jsonStr := rewritten[start : end+1]
-	
 	var post struct {
 		GameName     string `json:"game_name"`
 		TelegramHTML string `json:"telegram_html"`
 		ThreadsText  string `json:"threads_text"`
 	}
-	
-	if err := json.Unmarshal([]byte(jsonStr), &post); err != nil {
-		slog.Error("failed to parse AI JSON response", "error", err, "raw", jsonStr)
+
+	var success bool
+	for attempt := 1; attempt <= 3; attempt++ {
+		rewritten, err := manager.Generate(ctx, prompt)
+		if err != nil {
+			slog.Error("AI highlight generation failed", "error", err, "attempt", attempt)
+			continue
+		}
+
+		// 3. Parse AI response
+		start := strings.Index(rewritten, "{")
+		end := strings.LastIndex(rewritten, "}")
+		if start == -1 || end == -1 || end < start {
+			slog.Error("failed to find JSON in AI response", "raw", rewritten, "attempt", attempt)
+			continue
+		}
+		
+		jsonStr := rewritten[start : end+1]
+		if err := json.Unmarshal([]byte(jsonStr), &post); err != nil {
+			slog.Error("failed to parse AI JSON response", "error", err, "raw", jsonStr, "attempt", attempt)
+			continue
+		}
+
+		// Verify it's not a duplicate
+		cleanNew := strings.ToLower(strings.TrimSpace(post.GameName))
+		isDuplicate := false
+		for _, g := range previousGames {
+			cleanPrev := strings.ToLower(strings.TrimSpace(g))
+			if cleanPrev != "" && cleanNew != "" && (strings.Contains(cleanPrev, cleanNew) || strings.Contains(cleanNew, cleanPrev)) {
+				isDuplicate = true
+				break
+			}
+		}
+
+		if !isDuplicate {
+			success = true
+			break
+		}
+		
+		slog.Warn("AI generated a duplicate game, retrying...", "game", post.GameName, "attempt", attempt)
+	}
+
+	if !success {
+		slog.Error("failed to generate a unique highlight game after 3 attempts")
 		return
 	}
 
