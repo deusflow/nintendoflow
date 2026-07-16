@@ -50,10 +50,15 @@ func (o *OpenRouterProvider) Complete(ctx context.Context, prompt string) (strin
 }
 
 func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt string) (string, error) {
+	needJSON := strings.Contains(strings.ToLower(prompt), "json")
+
 	messages := []map[string]string{}
 	parts := strings.Split(prompt, "=== КІНЕЦЬ ІНСТРУКЦІЙ ===")
 	if len(parts) == 2 {
-		systemContent := strings.TrimSpace(parts[0]) + "\nYou must respond in json format."
+		systemContent := strings.TrimSpace(parts[0])
+		if needJSON {
+			systemContent += "\nYou must respond in json format."
+		}
 		messages = append(messages, map[string]string{"role": "system", "content": systemContent})
 		messages = append(messages, map[string]string{"role": "user", "content": strings.TrimSpace(parts[1])})
 	} else {
@@ -64,9 +69,11 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 		"model":      model,
 		"messages":   messages,
 		"max_tokens": 500,
-		"response_format": map[string]string{
+	}
+	if needJSON {
+		payload["response_format"] = map[string]string{
 			"type": "json_object",
-		},
+		}
 	}
 
 	jsonBody, err := json.Marshal(payload)
