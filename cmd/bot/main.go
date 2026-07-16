@@ -660,10 +660,13 @@ Structure of the Telegram post (telegram_html):
 3. **CRITICAL LIMIT**: The text MUST be exactly 2 or 3 paragraphs maximum (excluding the title). Do not write 4 or more paragraphs.
 
 Structure of the Threads post (threads_text):
-- Very personal, emotional, first-person ("I").
-- Short (max 400 chars). Use asterisks for cute styles (e.g., ✨, 🎀).
+- Write a condensed, informative mini-article summarizing the game's development, innovation, and legacy.
+- Tone: conversational but educational, using a friendly blogger style.
+- Use introductory phrases like "Трошки з світу Нінтендо:" and transitions like "Такі от справи :) Що особливого?".
+- Length: STRICTLY between 450 and 498 characters. DO NOT exceed 500 characters.
 - No HTML or Markdown.
-- Example: "Йооой, оце вееесчь ✨ Super Mario 64 назавжди в серденьку 🌸"
+- EXACT STYLE REFERENCE (Follow this rhythm and structure exactly):
+"Трошки з світу Нінтендо: цю легендарну гру \"The Legend of Zelda: A Link to the Past\" розробили під керівництвом Міямото, це був революційний жанр action-adventure та встановила новий стандарт для майбутніх ігор серії. Такі от справи :) Що особливого? Її інноваційна система перемикання між світами, складні лабіринти та епічна історія. Сьогодні Zelda залишається однією з найкращих ігор усіх часів, Її вплив на індустрію незаперечний, а її спадщина продовжує жити у серцях шанувальників."
 
 CRITICAL RULES for quality and accuracy:
 - **Zero Hallucinations**: You must only use 100%% verified historical facts. Never guess or invent details.
@@ -675,7 +678,7 @@ Example JSON output:
 {
   "game_name": "Super Mario 64",
   "telegram_html": "<b>Super Mario 64: Безчасна Класика</b>\n\nПерший абзац тексту про гру та інновації...\n\nДругий і останній абзац про спадщину та вплив...",
-  "threads_text": "Оце так гра ✨ Super Mario 64 просто розриває 🌸"
+  "threads_text": "Трошки з світу Нінтендо: цю легендарну гру \"Super Mario 64\" розробили під керівництвом Міямото..."
 }
 `, exclusionList)
 
