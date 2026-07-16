@@ -53,7 +53,8 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 	messages := []map[string]string{}
 	parts := strings.Split(prompt, "=== КІНЕЦЬ ІНСТРУКЦІЙ ===")
 	if len(parts) == 2 {
-		messages = append(messages, map[string]string{"role": "system", "content": strings.TrimSpace(parts[0])})
+		systemContent := strings.TrimSpace(parts[0]) + "\nYou must respond in JSON format."
+		messages = append(messages, map[string]string{"role": "system", "content": systemContent})
 		messages = append(messages, map[string]string{"role": "user", "content": strings.TrimSpace(parts[1])})
 	} else {
 		messages = append(messages, map[string]string{"role": "user", "content": prompt})
