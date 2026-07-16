@@ -196,20 +196,10 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		if err := publishPendingArticleTG(ctx, database, bot, testChannelID, articleID); err != nil {
 			return fmt.Errorf("publish TG article %d: %w", articleID, err)
 		}
-		if err := db.DeleteModerationEditSessionsByArticle(ctx, database, articleID); err != nil {
-			slog.Warn("handleCallback: cleanup edit sessions after publish", "error", err, "article_id", articleID)
-		}
 		
-		article, _ := db.GetArticleByID(ctx, database, articleID)
-		if article.PostedTG && article.PostedThreads {
-			if cb.Message != nil {
-				if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published ✅"); err != nil {
-					slog.Warn("handleCallback: edit message after publish failed", "error", err)
-				}
-			}
-		} else {
-			if cb.Message != nil {
-				_ = telegram.EditModerationPreview(bot, cb.Message.Chat.ID, cb.Message.MessageID, article)
+		if cb.Message != nil {
+			if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published to Telegram ✅"); err != nil {
+				slog.Warn("handleCallback: edit message after publish failed", "error", err)
 			}
 		}
 		answerCallback(bot, cb.ID, "Published to Telegram")
@@ -232,16 +222,9 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 			return fmt.Errorf("publish Threads article %d: %w", articleID, err)
 		}
 		
-		article.PostedThreads = true
-		if article.PostedTG && article.PostedThreads {
-			if cb.Message != nil {
-				if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published ✅"); err != nil {
-					slog.Warn("handleCallback: edit message after publish failed", "error", err)
-				}
-			}
-		} else {
-			if cb.Message != nil {
-				_ = telegram.EditModerationPreview(bot, cb.Message.Chat.ID, cb.Message.MessageID, article)
+		if cb.Message != nil {
+			if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published to Threads ✅"); err != nil {
+				slog.Warn("handleCallback: edit message after publish failed", "error", err)
 			}
 		}
 		answerCallback(bot, cb.ID, "Published to Threads")
@@ -266,7 +249,8 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		answerCallback(bot, cb.ID, "Already published!")
 		return nil
 
-	case "edit":
+	case "edit_tg", "edit_th":
+		target := strings.TrimPrefix(action, "edit_")
 		if cb.Message == nil {
 			return fmt.Errorf("edit callback missing source message, article_id=%d", articleID)
 		}
@@ -276,6 +260,7 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 
 		slog.Info("handleCallback: entering edit mode",
 			"article_id", articleID,
+			"target", target,
 			"chat_id", chatID,
 			"user_id", userID,
 			"preview_message_id", msgID,
@@ -295,17 +280,19 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 			UserID:           userID,
 			ArticleID:        articleID,
 			PreviewMessageID: msgID,
+			EditTarget:       target,
 		}); err != nil {
 			return fmt.Errorf("upsert edit session article=%d chat=%d user=%d: %w", articleID, chatID, userID, err)
 		}
 		slog.Info("handleCallback: edit session saved",
 			"article_id", articleID,
+			"target", target,
 			"chat_id", chatID,
 			"user_id", userID,
 			"preview_message_id", msgID,
 		)
 
-		if err := telegram.EditModerationWaitingMessage(bot, chatID, msgID, article); err != nil {
+		if err := telegram.EditModerationWaitingMessage(bot, chatID, msgID, article, target); err != nil {
 			slog.Warn("handleCallback: edit waiting message failed (non-fatal)", "error", err)
 		}
 		answerCallback(bot, cb.ID, "Send the replacement text")
@@ -392,6 +379,7 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	slog.Info("handleEditMessage: active edit session found",
 		"session_article_id", session.ArticleID,
 		"session_preview_msg_id", session.PreviewMessageID,
+		"session_edit_target", session.EditTarget,
 		"session_updated_at", session.UpdatedAt,
 		"session_chat_id", session.ChatID,
 		"session_user_id", session.UserID,
@@ -440,13 +428,23 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 
 	slog.Info("handleEditMessage: applying body update",
 		"article_id", article.ID,
+		"target", session.EditTarget,
 		"new_body_len", len(text),
 	)
 
-	if err := db.UpdateBodyUAOnly(ctx, database, article.ID, text); err != nil {
-		return fmt.Errorf("update body_ua article %d: %w", article.ID, err)
+	if session.EditTarget == "th" {
+		article.BodyThreads = text
+		if err := db.UpdateBodies(ctx, database, article.ID, article.BodyUA, article.BodyThreads, article.AIProvider); err != nil {
+			return fmt.Errorf("update body_threads article %d: %w", article.ID, err)
+		}
+	} else {
+		article.BodyUA = text
+		if err := db.UpdateBodyUAOnly(ctx, database, article.ID, text); err != nil {
+			return fmt.Errorf("update body_ua article %d: %w", article.ID, err)
+		}
 	}
-	slog.Info("handleEditMessage: body_ua updated", "article_id", article.ID)
+	
+	slog.Info("handleEditMessage: body updated", "article_id", article.ID, "target", session.EditTarget)
 
 	if err := db.UpdateArticleStatus(ctx, database, article.ID, db.StatusPending); err != nil {
 		return fmt.Errorf("restore pending status article %d: %w", article.ID, err)
@@ -458,10 +456,9 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	}
 	slog.Info("handleEditMessage: edit session cleared", "article_id", article.ID)
 
-	article.BodyUA = text
 	article.Status = db.StatusPending
 
-	if err := telegram.EditModerationPreview(bot, chatID, session.PreviewMessageID, article); err != nil {
+	if err := telegram.EditModerationPreview(bot, chatID, session.PreviewMessageID, article, session.EditTarget); err != nil {
 		slog.Warn("handleEditMessage: inline preview edit failed, sending new preview message", "error", err)
 		previewChatID := strconv.FormatInt(chatID, 10)
 		if _, sendErr := telegram.SendModerationPreview(bot, previewChatID, article); sendErr != nil {
@@ -493,7 +490,8 @@ func cancelEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotA
 				"article_id", articleID,
 				"article_status", article.Status,
 			)
-			return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, cb.Message.MessageID, article, false)
+			// Target is unknown, fallback to "tg"
+			return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, cb.Message.MessageID, article, "tg", false)
 		}
 		return fmt.Errorf("get edit session: %w", err)
 	}
@@ -510,8 +508,9 @@ func cancelEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotA
 	slog.Info("cancelEditSession: restoring preview",
 		"article_id", articleID,
 		"preview_message_id", session.PreviewMessageID,
+		"target", session.EditTarget,
 	)
-	return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, session.PreviewMessageID, article, true)
+	return restoreArticlePreview(ctx, database, bot, cb.Message.Chat.ID, session.PreviewMessageID, article, session.EditTarget, true)
 }
 
 func expireEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, chatID int64, session db.ModerationEditSession) error {
@@ -519,10 +518,10 @@ func expireEditSession(ctx context.Context, database *sql.DB, bot *tgbotapi.BotA
 	if err != nil {
 		return fmt.Errorf("get article %d: %w", session.ArticleID, err)
 	}
-	return restoreArticlePreview(ctx, database, bot, chatID, session.PreviewMessageID, article, true)
+	return restoreArticlePreview(ctx, database, bot, chatID, session.PreviewMessageID, article, session.EditTarget, true)
 }
 
-func restoreArticlePreview(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article, deleteSession bool) error {
+func restoreArticlePreview(ctx context.Context, database *sql.DB, bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article, target string, deleteSession bool) error {
 	if deleteSession {
 		if err := db.DeleteModerationEditSessionsByArticle(ctx, database, article.ID); err != nil {
 			slog.Warn("restoreArticlePreview: delete session failed (non-fatal)", "error", err, "article_id", article.ID)
@@ -547,9 +546,10 @@ func restoreArticlePreview(ctx context.Context, database *sql.DB, bot *tgbotapi.
 		"article_id", article.ID,
 		"chat_id", chatID,
 		"message_id", messageID,
+		"target", target,
 	)
 
-	if err := telegram.EditModerationPreview(bot, chatID, messageID, article); err != nil {
+	if err := telegram.EditModerationPreview(bot, chatID, messageID, article, target); err != nil {
 		slog.Warn("restoreArticlePreview: inline edit failed, sending new message", "error", err)
 		previewChatID := strconv.FormatInt(chatID, 10)
 		if _, sendErr := telegram.SendModerationPreview(bot, previewChatID, article); sendErr != nil {

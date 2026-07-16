@@ -12,25 +12,27 @@ import (
 )
 
 const (
-	moderationActionPubTG   = "pub_tg"
-	moderationActionPubTH   = "pub_th"
-	moderationActionEdit    = "edit"
-	moderationActionReject  = "reject"
-	moderationActionCancel  = "cancel"
-	moderationActionNoop    = "noop"
+	ModerationActionPubTG   = "pub_tg"
+	ModerationActionPubTH   = "pub_th"
+	ModerationActionEditTG  = "edit_tg"
+	ModerationActionEditTH  = "edit_th"
+	ModerationActionReject  = "reject"
+	ModerationActionCancel  = "cancel"
+	ModerationActionNoop    = "noop"
 )
 
 func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Article) (int, error) {
-	text := buildModerationPreviewText(article)
 	chat, channel, err := resolveChat(chatID)
 	if err != nil {
 		return 0, err
 	}
-	markup := moderationKeyboard(article)
+
+	// 1. Send TG Preview
+	tgText := buildTGPreviewText(article)
+	tgMarkup := moderationTGKeyboard(article)
 
 	previewImage := strings.TrimSpace(article.ImageURL)
 	if previewImage == "" && strings.TrimSpace(article.VideoURL) == "" {
-		// Use the same fallback images as PostArticle
 		previewImage = getFallbackImageURL(article.ArticleType)
 	} else if previewImage == "" {
 		previewImage = youtubeThumbnailURL(article.VideoURL)
@@ -42,41 +44,50 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 				BaseChat: tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel},
 				File:     tgbotapi.FileURL(previewImage),
 			},
-			Caption:   text,
+			Caption:   fmt.Sprintf("<b>Preview Telegram</b>\nPhoto attached for: %s", escapeHTML(article.TitleRaw)),
 			ParseMode: "HTML",
 		}
-		photo.ReplyMarkup = markup
-		sent, sendErr := bot.Send(photo)
-		if sendErr == nil {
-			return sent.MessageID, nil
+		// Send photo without markup to avoid caption limits
+		_, sendErr := bot.Send(photo)
+		if sendErr != nil {
+			slog.Warn("telegram preview media send failed",
+				"mode", "preview",
+				"step", "send_photo",
+				"article_id", article.ID,
+				"error", sendErr,
+			)
 		}
-		slog.Warn("telegram preview media send failed",
-			"mode", "preview",
-			"step", "send_photo",
-			"article_id", article.ID,
-			"image_url", previewImage,
-			"video_url", strings.TrimSpace(article.VideoURL),
-			"error", sendErr,
-		)
 	}
 
 	if strings.TrimSpace(article.VideoURL) != "" {
-		text = fmt.Sprintf("%s\n\n🔗 %s", text, strings.TrimSpace(article.VideoURL))
+		tgText = fmt.Sprintf("%s\n\n🔗 %s", tgText, strings.TrimSpace(article.VideoURL))
 	}
 
-	msg, err := newTextMessage(chatID, text)
+	tgMsg, err := newTextMessage(chatID, tgText)
 	if err != nil {
 		return 0, err
 	}
-	msg.ParseMode = "HTML"
-	msg.DisableWebPagePreview = true
-	msg.ReplyMarkup = markup
+	tgMsg.ParseMode = "HTML"
+	tgMsg.DisableWebPagePreview = true
+	tgMsg.ReplyMarkup = tgMarkup
 
-	sent, err := bot.Send(msg)
+	tgSent, err := bot.Send(tgMsg)
 	if err != nil {
-		return 0, fmt.Errorf("telegram send preview: %w", err)
+		return 0, fmt.Errorf("telegram send TG preview: %w", err)
 	}
-	return sent.MessageID, nil
+
+	// 2. Send Threads Preview
+	thText := buildTHPreviewText(article)
+	thMarkup := moderationTHKeyboard(article)
+	thMsg, err := newTextMessage(chatID, thText)
+	if err == nil {
+		thMsg.ParseMode = "HTML"
+		thMsg.DisableWebPagePreview = true
+		thMsg.ReplyMarkup = thMarkup
+		_, _ = bot.Send(thMsg)
+	}
+
+	return tgSent.MessageID, nil
 }
 
 func resolveChat(chatID string) (int64, string, error) {
@@ -126,9 +137,9 @@ func EditModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, te
 	return editModerationMessage(bot, chatID, messageID, text, nil)
 }
 
-func EditModerationWaitingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
+func EditModerationWaitingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article, target string) error {
 	markup := moderationWaitingKeyboard(article.ID)
-	return editModerationMessage(bot, chatID, messageID, BuildModerationEditWaitingText(article), &markup)
+	return editModerationMessage(bot, chatID, messageID, BuildModerationEditWaitingText(article, target), &markup)
 }
 
 func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string, markup *tgbotapi.InlineKeyboardMarkup) error {
@@ -158,16 +169,29 @@ func editModerationMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, te
 	return nil
 }
 
-func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article) error {
-	markup := moderationKeyboard(article)
-	if err := editModerationMessage(bot, chatID, messageID, buildModerationPreviewText(article), &markup); err != nil {
+func EditModerationPreview(bot *tgbotapi.BotAPI, chatID int64, messageID int, article db.Article, target string) error {
+	var markup tgbotapi.InlineKeyboardMarkup
+	var text string
+	if target == "th" {
+		markup = moderationTHKeyboard(article)
+		text = buildTHPreviewText(article)
+	} else {
+		markup = moderationTGKeyboard(article)
+		text = buildTGPreviewText(article)
+	}
+
+	if err := editModerationMessage(bot, chatID, messageID, text, &markup); err != nil {
 		return fmt.Errorf("telegram edit moderation preview: %w", err)
 	}
 	return nil
 }
 
-func BuildModerationEditWaitingText(article db.Article) string {
-	return fmt.Sprintf("<b>Edit mode enabled ✍️</b>\n\nSend your next text message to replace the article body for:\n<b>%s</b>", escapeHTML(article.TitleRaw))
+func BuildModerationEditWaitingText(article db.Article, target string) string {
+	tgtName := "Telegram"
+	if target == "th" {
+		tgtName = "Threads"
+	}
+	return fmt.Sprintf("<b>Edit %s mode enabled ✍️</b>\n\nSend your next text message to replace the %s article body for:\n<b>%s</b>", tgtName, tgtName, escapeHTML(article.TitleRaw))
 }
 
 func ParseModerationCallbackData(data string) (string, int, error) {
@@ -177,7 +201,7 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	}
 	action := parts[1]
 	switch action {
-	case moderationActionPubTG, moderationActionPubTH, moderationActionEdit, moderationActionReject, moderationActionCancel, moderationActionNoop:
+	case ModerationActionPubTG, ModerationActionPubTH, ModerationActionEditTG, ModerationActionEditTH, ModerationActionReject, ModerationActionCancel, ModerationActionNoop:
 	default:
 		return "", 0, fmt.Errorf("unsupported callback action")
 	}
@@ -188,48 +212,43 @@ func ParseModerationCallbackData(data string) (string, int, error) {
 	return action, id, nil
 }
 
-func moderationKeyboard(article db.Article) tgbotapi.InlineKeyboardMarkup {
+func moderationTGKeyboard(article db.Article) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
-
-	// Action row
-	btnTG := tgbotapi.NewInlineKeyboardButtonData("TG: Publish", fmt.Sprintf("mod:%s:%d", moderationActionPubTG, article.ID))
+	btnPub := tgbotapi.NewInlineKeyboardButtonData("TG: Publish", fmt.Sprintf("mod:%s:%d", ModerationActionPubTG, article.ID))
 	if article.PostedTG {
-		btnTG = tgbotapi.NewInlineKeyboardButtonData("TG: ✅", fmt.Sprintf("mod:%s:%d", moderationActionNoop, article.ID))
+		btnPub = tgbotapi.NewInlineKeyboardButtonData("TG: ✅", fmt.Sprintf("mod:%s:%d", ModerationActionNoop, article.ID))
 	}
-
-	btnTH := tgbotapi.NewInlineKeyboardButtonData("Threads: Publish", fmt.Sprintf("mod:%s:%d", moderationActionPubTH, article.ID))
-	if article.PostedThreads {
-		btnTH = tgbotapi.NewInlineKeyboardButtonData("Threads: ✅", fmt.Sprintf("mod:%s:%d", moderationActionNoop, article.ID))
-	}
-
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(btnTG, btnTH))
-
-	// Edit and Reject row
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(btnPub))
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Edit", fmt.Sprintf("mod:%s:%d", moderationActionEdit, article.ID)),
-		tgbotapi.NewInlineKeyboardButtonData("Reject", fmt.Sprintf("mod:%s:%d", moderationActionReject, article.ID)),
+		tgbotapi.NewInlineKeyboardButtonData("Edit TG", fmt.Sprintf("mod:%s:%d", ModerationActionEditTG, article.ID)),
+		tgbotapi.NewInlineKeyboardButtonData("Reject All", fmt.Sprintf("mod:%s:%d", ModerationActionReject, article.ID)),
 	))
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
 
-	// Link row
-	videoURL := strings.TrimSpace(article.VideoURL)
-	if videoURL != "" {
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("🎥 Дивитися відео", videoURL),
-		))
+func moderationTHKeyboard(article db.Article) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+	btnPub := tgbotapi.NewInlineKeyboardButtonData("Threads: Publish", fmt.Sprintf("mod:%s:%d", ModerationActionPubTH, article.ID))
+	if article.PostedThreads {
+		btnPub = tgbotapi.NewInlineKeyboardButtonData("Threads: ✅", fmt.Sprintf("mod:%s:%d", ModerationActionNoop, article.ID))
 	}
-
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(btnPub))
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("Edit Threads", fmt.Sprintf("mod:%s:%d", ModerationActionEditTH, article.ID)),
+		tgbotapi.NewInlineKeyboardButtonData("Reject All", fmt.Sprintf("mod:%s:%d", ModerationActionReject, article.ID)),
+	))
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
 func moderationWaitingKeyboard(articleID int) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Cancel", fmt.Sprintf("mod:%s:%d", moderationActionCancel, articleID)),
+			tgbotapi.NewInlineKeyboardButtonData("Cancel", fmt.Sprintf("mod:%s:%d", ModerationActionCancel, articleID)),
 		),
 	)
 }
 
-func buildModerationPreviewText(article db.Article) string {
+func buildTGPreviewText(article db.Article) string {
 	body := stripSourceFooter(article.BodyUA)
 	if body == "" {
 		body = "(empty body)"
@@ -241,17 +260,31 @@ func buildModerationPreviewText(article db.Article) string {
 
 	typeLabel := articleTypeLabel(article.ArticleType)
 
-	mediaHint := ""
-	if strings.TrimSpace(article.VideoURL) != "" {
-		mediaHint = " 🎥"
-	} else if strings.TrimSpace(article.ImageURL) != "" {
-		mediaHint = " 🖼️"
+	return fmt.Sprintf(
+		"<b>Preview Telegram</b>\n\n<b>Title:</b> %s\n<b>Source:</b> %s · %s · <b>%d pts</b>\n\n%s\n\n<a href=\"%s\">Original link</a>",
+		escapeHTML(article.TitleRaw),
+		escapeHTML(article.SourceName),
+		typeLabel,
+		article.Score,
+		body,
+		escapeHTML(article.SourceURL),
+	)
+}
+
+func buildTHPreviewText(article db.Article) string {
+	body := article.BodyThreads
+	if body == "" {
+		body = "(empty body threads)"
+	}
+	bodyRunes := []rune(body)
+	if len(bodyRunes) > 1800 {
+		body = string(bodyRunes[:1800]) + "..."
 	}
 
-	// body is already AI-generated HTML — do NOT escape it.
+	typeLabel := articleTypeLabel(article.ArticleType)
+
 	return fmt.Sprintf(
-		"<b>Preview</b>%s\n\n<b>Title:</b> %s\n<b>Source:</b> %s · %s · <b>%d pts</b>\n\n%s\n\n<a href=\"%s\">Original link</a>",
-		mediaHint,
+		"<b>Preview Threads</b>\n\n<b>Title:</b> %s\n<b>Source:</b> %s · %s · <b>%d pts</b>\n\n%s\n\n<a href=\"%s\">Original link</a>",
 		escapeHTML(article.TitleRaw),
 		escapeHTML(article.SourceName),
 		typeLabel,

@@ -12,8 +12,8 @@ func TestParseModerationCallbackDataSupportsCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseModerationCallbackData returned error: %v", err)
 	}
-	if action != moderationActionCancel {
-		t.Fatalf("expected action %q, got %q", moderationActionCancel, action)
+	if action != ModerationActionCancel {
+		t.Fatalf("expected action %q, got %q", ModerationActionCancel, action)
 	}
 	if articleID != 42 {
 		t.Fatalf("expected articleID=42, got %d", articleID)
@@ -21,7 +21,7 @@ func TestParseModerationCallbackDataSupportsCancel(t *testing.T) {
 }
 
 func TestBuildModerationEditWaitingTextMentionsTitle(t *testing.T) {
-	text := BuildModerationEditWaitingText(db.Article{TitleRaw: "Switch 2 leak"})
+	text := BuildModerationEditWaitingText(db.Article{TitleRaw: "Switch 2 leak"}, "tg")
 	if text == "" {
 		t.Fatal("expected non-empty waiting text")
 	}

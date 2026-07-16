@@ -49,6 +49,7 @@ type ModerationEditSession struct {
 	UserID           int64
 	ArticleID        int
 	PreviewMessageID int
+	EditTarget       string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -146,14 +147,15 @@ func UpsertModerationEditSession(ctx context.Context, db *sql.DB, session Modera
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO moderation_edit_sessions (chat_id, user_id, article_id, preview_message_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		INSERT INTO moderation_edit_sessions (chat_id, user_id, article_id, preview_message_id, edit_target, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 		ON CONFLICT (chat_id, user_id)
 		DO UPDATE SET
 			article_id = EXCLUDED.article_id,
 			preview_message_id = EXCLUDED.preview_message_id,
+			edit_target = EXCLUDED.edit_target,
 			updated_at = NOW()
-	`, session.ChatID, session.UserID, session.ArticleID, session.PreviewMessageID); err != nil {
+	`, session.ChatID, session.UserID, session.ArticleID, session.PreviewMessageID, session.EditTarget); err != nil {
 		return err
 	}
 
@@ -163,7 +165,7 @@ func UpsertModerationEditSession(ctx context.Context, db *sql.DB, session Modera
 func GetModerationEditSession(ctx context.Context, db *sql.DB, chatID, userID int64) (ModerationEditSession, error) {
 	var session ModerationEditSession
 	err := db.QueryRowContext(ctx, `
-		SELECT chat_id, user_id, article_id, preview_message_id, created_at, updated_at
+		SELECT chat_id, user_id, article_id, preview_message_id, edit_target, created_at, updated_at
 		FROM moderation_edit_sessions
 		WHERE chat_id=$1 AND user_id=$2
 	`, chatID, userID).Scan(
@@ -171,6 +173,7 @@ func GetModerationEditSession(ctx context.Context, db *sql.DB, chatID, userID in
 		&session.UserID,
 		&session.ArticleID,
 		&session.PreviewMessageID,
+		&session.EditTarget,
 		&session.CreatedAt,
 		&session.UpdatedAt,
 	)
