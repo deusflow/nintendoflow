@@ -514,9 +514,12 @@ func main() {
 	logStage("telegram_post", stageStart, runStart)
 
 	// Cross-post to Threads if configured
-	threads.MaybeCrossPost(ctx, article, msgID)
-	if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
-		slog.Warn("mark posted threads failed", "error", err)
+	if err := threads.MaybeCrossPost(ctx, article, msgID); err != nil {
+		slog.Warn("threads cross-post skipped or failed", "error", err)
+	} else {
+		if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
+			slog.Warn("mark posted threads failed", "error", err)
+		}
 	}
 
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)

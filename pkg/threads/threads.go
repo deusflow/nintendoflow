@@ -173,11 +173,11 @@ func FormatThread(article db.Article, tgChannelUsername string, tgMessageID int)
 }
 
 // MaybeCrossPost posts a thread for the given article if Threads credentials are set.
-func MaybeCrossPost(ctx context.Context, article db.Article, messageID int) {
+func MaybeCrossPost(ctx context.Context, article db.Article, messageID int) error {
 	accessToken := strings.TrimSpace(os.Getenv("THREADS_ACCESS_TOKEN"))
 	if accessToken == "" {
 		slog.Debug("threads: access token is empty, skipping cross-post")
-		return
+		return fmt.Errorf("THREADS_ACCESS_TOKEN is missing or empty")
 	}
 
 	tgUsername := os.Getenv("TELEGRAM_CHANNEL_USERNAME")
@@ -191,8 +191,9 @@ func MaybeCrossPost(ctx context.Context, article db.Article, messageID int) {
 	postID, err := PostThread(ctx, threadText)
 	if err != nil {
 		slog.Error("threads: cross-post failed", "error", err)
-		return
+		return fmt.Errorf("threads API error: %w", err)
 	}
 
 	slog.Info("threads: successfully cross-posted to Threads", "post_id", postID)
+	return nil
 }

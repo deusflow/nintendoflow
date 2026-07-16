@@ -219,7 +219,9 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		}
 		
 		if err := publishPendingArticleTH(ctx, database, article); err != nil {
-			return fmt.Errorf("publish Threads article %d: %w", articleID, err)
+			slog.Error("handleCallback: Threads publish failed", "error", err)
+			answerCallbackAlert(bot, cb.ID, fmt.Sprintf("Failed to publish to Threads:\n%v", err))
+			return nil // Don't return error to http handler so we can gracefully ack the callback
 		}
 		
 		if cb.Message != nil {
@@ -608,7 +610,9 @@ func publishPendingArticleTH(ctx context.Context, database *sql.DB, article db.A
 	}
 	
 	// Cross-post to Threads if credentials are provided in the environment
-	threads.MaybeCrossPost(ctx, article, article.TgMessageID)
+	if err := threads.MaybeCrossPost(ctx, article, article.TgMessageID); err != nil {
+		return err
+	}
 	
 	if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
 		return err
@@ -622,6 +626,14 @@ func answerCallback(bot *tgbotapi.BotAPI, callbackID, text string) {
 		return
 	}
 	cb := tgbotapi.NewCallback(callbackID, text)
+	_, _ = bot.Request(cb)
+}
+
+func answerCallbackAlert(bot *tgbotapi.BotAPI, callbackID, text string) {
+	if callbackID == "" {
+		return
+	}
+	cb := tgbotapi.NewCallbackWithAlert(callbackID, text)
 	_, _ = bot.Request(cb)
 }
 
