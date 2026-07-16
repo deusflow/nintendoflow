@@ -39,7 +39,7 @@ func (g *GroqProvider) Complete(ctx context.Context, prompt string) (string, err
 	messages := []map[string]string{}
 	parts := strings.Split(prompt, "=== КІНЕЦЬ ІНСТРУКЦІЙ ===")
 	if len(parts) == 2 {
-		systemContent := strings.TrimSpace(parts[0]) + "\nYou must respond in JSON format."
+		systemContent := strings.TrimSpace(parts[0]) + "\nYou must respond in json format."
 		messages = append(messages, map[string]string{"role": "system", "content": systemContent})
 		messages = append(messages, map[string]string{"role": "user", "content": strings.TrimSpace(parts[1])})
 	} else {

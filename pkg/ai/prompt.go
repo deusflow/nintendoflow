@@ -112,9 +112,9 @@ const promptTemplate = `%s
 Джерело: %s
 
 === ЗАВДАННЯ ===
-Згенеруй JSON з двома варіантами тексту (для Telegram та для Threads) згідно стилю вище.
+Згенеруй json з двома варіантами тексту (для Telegram та для Threads) згідно стилю вище.
 Тип новини вибери з: insight, rumor, news, offtop.
-Відповідь має бути ВАЛІДНИМ JSON (нічого крім JSON):
+Відповідь має бути ВАЛІДНИМ json (нічого крім json):
 {
   "skip": false,
   "type": "news",
