@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -648,24 +649,31 @@ func runHighlightMode(ctx context.Context, database *sql.DB, manager *ai.Manager
 
 	prompt := fmt.Sprintf(`Choose a legendary, critically acclaimed Nintendo game with Metacritic 85+ (from NES, SNES, N64, GameCube, Wii, DS, 3DS, Wii U, or Switch eras) that is NOT in this exclusion list: [%s].
 
-Write a highly engaging, atmospheric, and emotional storytelling post in Ukrainian about this game, acting as a passionate gaming historian. 
-Tell it as a compelling narrative rather than a dry list of facts.
+Write a highly engaging, atmospheric, and emotional storytelling post in Ukrainian about this game, acting as a passionate gaming historian.
 
-Structure of the post:
-1. **Title**: Start the narrative with a catchy title enclosed in <b> tags (e.g. <b>Super Mario 64: Безчасна Класика (N64, 1996, 94)</b>). Do not write "Title:" or "Заголовок:".
-2. **Introduction**: A cinematic hook that sets the scene and describes the gaming landscape of that era.
-3. **The Creative Struggle / Development Drama**: The actual challenges, breakthroughs, and human stories during development. Detail the vision of the key creators (e.g. Shigeru Miyamoto, Takashi Tezuka, Eiji Aonuma, Koji Kondo).
-4. **The Magic & Innovation**: Explain the gameplay innovations, control mechanics, or musical score that touched players' hearts.
-5. **The Legacy**: Why this game is a timeless masterpiece and why it holds such high scores.
+Structure of the Telegram post (telegram_html):
+1. **Title**: Start the narrative with a catchy title enclosed in <b> tags (e.g. <b>Super Mario 64: Безчасна Класика (N64, 1996, 94)</b>).
+2. **Body**: Write a compelling narrative focusing on the game's innovation, development magic, and legacy.
+3. **CRITICAL LIMIT**: The text MUST be exactly 2 or 3 paragraphs maximum (excluding the title). Do not write 4 or more paragraphs.
+
+Structure of the Threads post (threads_text):
+- Very personal, emotional, first-person ("I").
+- Short (max 400 chars). Use asterisks for cute styles (e.g., ✨, 🎀).
+- No HTML or Markdown.
+- Example: "Йооой, оце вееесчь ✨ Super Mario 64 назавжди в серденьку 🌸"
 
 CRITICAL RULES for quality and accuracy:
 - **Zero Hallucinations**: You must only use 100%% verified historical facts. Never guess or invent details.
-- **Strict Name Check**: Verify spelling of Japanese creators. Example: Shigeru Miyamoto is Шігеру Міямото, Koji Kondo is Коджі Кондо, Takashi Tezuka is Такаші Тедзука, Yoshio Sakamoto is Йошіо Сакамото. If you are unsure of any name, refer to them as "Nintendo" or "команда розробників". Never invent names like "Miyatmo" or "Miyazaki" for Mario games.
-- **No Typos**: Ensure high-quality Ukrainian language with zero mixed alphabets or spelling errors (do not write "безčasовий").
-- **Rich Content**: The text should be detailed and educational, not a 3-sentence summary. Keep it between 1600 and 2200 characters.
-- **Formatting**: CRITICAL! DO NOT USE Markdown (like **text**). You MUST use HTML tags: <b>text</b> for bold and <i>text</i> for italics. Use clean paragraphs, and a maximum of 2 thematic emojis. Do not use dry bullet points if they break the narrative flow.
-- The very first line of the output MUST strictly be in this format: 'GAME: [Exact English Game Name]'. Example:
-GAME: Super Mario 64
+- **Strict Name Check**: Verify spelling of Japanese creators. Example: Shigeru Miyamoto is Шігеру Міямото.
+- **Formatting (Telegram)**: DO NOT USE Markdown. MUST use HTML tags: <b>text</b> and <i>text</i>.
+- **Output Format**: You MUST return ONLY a valid JSON object. Do not include markdown code blocks.
+
+Example JSON output:
+{
+  "game_name": "Super Mario 64",
+  "telegram_html": "<b>Super Mario 64: Безчасна Класика</b>\n\nПерший абзац тексту про гру та інновації...\n\nДругий і останній абзац про спадщину та вплив...",
+  "threads_text": "Оце так гра ✨ Super Mario 64 просто розриває 🌸"
+}
 `, exclusionList)
 
 	rewritten, err := manager.Generate(ctx, prompt)
@@ -675,17 +683,33 @@ GAME: Super Mario 64
 	}
 
 	// 3. Parse AI response
-	lines := strings.Split(rewritten, "\n")
-	gameTitle := "Legendary Nintendo Game"
-	cleanBodyLines := []string{}
-	for _, line := range lines {
-		if strings.HasPrefix(line, "GAME:") {
-			gameTitle = strings.TrimSpace(strings.TrimPrefix(line, "GAME:"))
-			continue
-		}
-		cleanBodyLines = append(cleanBodyLines, line)
+	// Find the JSON block
+	start := strings.Index(rewritten, "{")
+	end := strings.LastIndex(rewritten, "}")
+	if start == -1 || end == -1 || end < start {
+		slog.Error("failed to find JSON in AI response", "raw", rewritten)
+		return
 	}
-	cleanBody := strings.TrimSpace(strings.Join(cleanBodyLines, "\n"))
+	
+	jsonStr := rewritten[start : end+1]
+	
+	var post struct {
+		GameName     string `json:"game_name"`
+		TelegramHTML string `json:"telegram_html"`
+		ThreadsText  string `json:"threads_text"`
+	}
+	
+	if err := json.Unmarshal([]byte(jsonStr), &post); err != nil {
+		slog.Error("failed to parse AI JSON response", "error", err, "raw", jsonStr)
+		return
+	}
+
+	gameTitle := post.GameName
+	if gameTitle == "" {
+		gameTitle = "Legendary Nintendo Game"
+	}
+	cleanBody := strings.TrimSpace(post.TelegramHTML)
+	threadsBody := strings.TrimSpace(post.ThreadsText)
 
 	// 4. Create and insert article
 	now := time.Now()
@@ -712,7 +736,7 @@ GAME: Super Mario 64
 	article.ID = articleID
 
 	// Save the translated/generated body to the database so that it is not empty when approved.
-	if err := db.UpdateBodies(ctx, database, articleID, cleanBody, "", manager.LastProvider()); err != nil {
+	if err := db.UpdateBodies(ctx, database, articleID, cleanBody, threadsBody, manager.LastProvider()); err != nil {
 		slog.Error("update highlight bodies failed", "error", err)
 		return
 	}
