@@ -38,7 +38,13 @@ func dealScore(d Deal) float64 {
 		savings = 0
 	}
 	savingsFactor := math.Log2(savings + 1)
-	return float64(d.Metacritic) * (float64(d.Cut) / 100.0) * savingsFactor
+	
+	meta := float64(d.Metacritic)
+	if meta == 0 {
+		meta = 75.0 // fallback so we can still sort by discount/savings
+	}
+	
+	return meta * (float64(d.Cut) / 100.0) * savingsFactor
 }
 
 // FetchAndFilter is the main orchestrator:
@@ -100,7 +106,8 @@ func FetchAndFilter(ctx context.Context, database *sql.DB, itadKey string, minCu
 		if d.Cut < minCut {
 			continue
 		}
-		if d.Metacritic < minMeta {
+		// Since we no longer use ITAD, Nintendo API deals have Metacritic=0. Let them pass.
+		if d.Metacritic > 0 && d.Metacritic < minMeta {
 			continue
 		}
 		filtered = append(filtered, d)
