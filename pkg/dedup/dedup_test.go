@@ -38,3 +38,12 @@ func TestThresholdForSourceType(t *testing.T) {
 		t.Fatalf("unexpected threshold ordering: agg=%v media=%v insider=%v official=%v", aggregator, media, insider, official)
 	}
 }
+
+func TestStripForbiddenIntro(t *testing.T) {
+	input := "Йооой, оце вееесчь ✨ Японія вже вибрала найкращі ігри для Switch 2."
+	expected := "Японія вже вибрала найкращі ігри для Switch 2."
+	got := StripForbiddenIntro(input)
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}

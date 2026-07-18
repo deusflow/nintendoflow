@@ -491,3 +491,29 @@ func FetchRecentlyHighlightedGames(ctx context.Context, db *sql.DB) ([]string, e
 	}
 	return result, rows.Err()
 }
+
+// FetchRecentThreadsTexts returns non-empty Threads bodies from the last 7 days.
+func FetchRecentThreadsTexts(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT body_threads 
+		FROM articles 
+		WHERE created_at > NOW() - INTERVAL '7 days'
+		  AND body_threads IS NOT NULL 
+		  AND body_threads <> ''
+		ORDER BY created_at DESC 
+		LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []string
+	for rows.Next() {
+		var text string
+		if err := rows.Scan(&text); err != nil {
+			return nil, err
+		}
+		result = append(result, text)
+	}
+	return result, rows.Err()
+}

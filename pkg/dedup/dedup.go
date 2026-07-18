@@ -201,3 +201,79 @@ func isNumericToken(tok string) bool {
 	}
 	return true
 }
+
+var forbiddenClichéIntros = []string{
+	"йооой, оце вееесчь",
+	"оце так новина",
+	"йооой, оце вещь",
+	"оце вееесчь",
+	"оце вещь",
+	"оце так",
+	"ну що ж",
+	"оце новина",
+	"йооой",
+}
+
+// HasForbiddenClichéIntro checks if text starts with repetitive cliché intro phrases.
+func HasForbiddenClichéIntro(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	for _, phrase := range forbiddenClichéIntros {
+		if strings.HasPrefix(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// StripForbiddenIntro strips repetitive cliché intros like "Йооой, оце вееесчь ✨ " from the text.
+func StripForbiddenIntro(text string) string {
+	trimmed := strings.TrimSpace(text)
+	lower := strings.ToLower(trimmed)
+	for _, phrase := range forbiddenClichéIntros {
+		if strings.HasPrefix(lower, phrase) {
+			cutLen := len([]rune(phrase))
+			runes := []rune(trimmed)
+			if len(runes) > cutLen {
+				rest := strings.TrimSpace(string(runes[cutLen:]))
+				rest = strings.TrimLeft(rest, ",.!- \t\n\r✨🌸🎀")
+				if len(rest) > 0 {
+					runesRest := []rune(rest)
+					runesRest[0] = []rune(strings.ToUpper(string(runesRest[0])))[0]
+					return string(runesRest)
+				}
+			}
+		}
+	}
+	return trimmed
+}
+
+// IsThreadsIntroDuplicate checks if newText starts with a forbidden cliché or shares the same initial words as a recent Threads post.
+func IsThreadsIntroDuplicate(newText string, recentTexts []string) bool {
+	if HasForbiddenClichéIntro(newText) {
+		return true
+	}
+
+	newIntro := extractFirstWords(newText, 4)
+	if newIntro == "" {
+		return false
+	}
+
+	for _, recent := range recentTexts {
+		recentIntro := extractFirstWords(recent, 4)
+		if recentIntro != "" && strings.EqualFold(newIntro, recentIntro) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractFirstWords(text string, count int) string {
+	words := strings.Fields(strings.ToLower(strings.TrimSpace(text)))
+	if len(words) == 0 {
+		return ""
+	}
+	if len(words) > count {
+		words = words[:count]
+	}
+	return strings.Join(words, " ")
+}

@@ -389,7 +389,7 @@ func main() {
 
 	articleType := postData.Type
 	cleanBody := sanitizeGeneratedBody(postData.TelegramHTML)
-	threadsBody := postData.ThreadsText
+	threadsBody := dedup.StripForbiddenIntro(postData.ThreadsText)
 
 	hypeCount := calculateHype(selected.item, items)
 	var hypeText string
