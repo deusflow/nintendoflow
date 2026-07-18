@@ -55,3 +55,24 @@ func TestFormatThreadTruncation(t *testing.T) {
 		t.Errorf("Expected truncated thread to still contain link")
 	}
 }
+
+func TestFormatThreadWithBodyThreadsOverLimit(t *testing.T) {
+	longBodyThreads := strings.Repeat("Текст для Трідс ", 35) // ~525 chars
+	article := db.Article{
+		TitleRaw:    "Маріо",
+		BodyThreads: longBodyThreads,
+	}
+	username := "deusflow"
+	msgID := 999
+
+	thread := FormatThread(article, username, msgID)
+	threadRunes := []rune(thread)
+
+	if len(threadRunes) > 500 {
+		t.Errorf("Formatted thread with BodyThreads is too long: %d characters (max 500)", len(threadRunes))
+	}
+
+	if !strings.Contains(thread, "https://t.me/deusflow/999") {
+		t.Errorf("Expected thread to contain Telegram link, got: %q", thread)
+	}
+}

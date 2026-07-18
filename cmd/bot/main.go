@@ -750,6 +750,7 @@ Example JSON output:
 		ContentHash: dedup.HashTitle(cleanBody),
 		TitleRaw:    gameTitle,
 		BodyUA:      cleanBody,
+		BodyThreads: threadsBody,
 		SourceName:  "Nintendo Masterpiece",
 		SourceType:  "highlight",
 		ArticleType: "insight",

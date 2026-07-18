@@ -140,7 +140,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("webhook: handler returned error", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
 		return
 	}
 
@@ -214,7 +215,7 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		}
 		
 		if !article.PostedTG {
-			answerCallback(bot, cb.ID, "Please publish to Telegram first so a link can be generated!")
+			answerCallbackAlert(bot, cb.ID, "⚠️ Спочатку опублікуй пост у Telegram, щоб отримати посилання для Threads!")
 			return nil
 		}
 		

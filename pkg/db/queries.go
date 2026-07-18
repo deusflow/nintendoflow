@@ -475,8 +475,7 @@ func FetchRecentlyHighlightedGames(ctx context.Context, db *sql.DB) ([]string, e
 		SELECT title_raw 
 		FROM articles 
 		WHERE source_type = 'highlight' 
-		ORDER BY created_at DESC 
-		LIMIT 100`)
+		ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}

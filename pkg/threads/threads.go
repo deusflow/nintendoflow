@@ -120,10 +120,24 @@ func FormatThread(article db.Article, tgChannelUsername string, tgMessageID int)
 
 	if article.BodyThreads != "" {
 		bodyClean := stripHTML(article.BodyThreads)
+		var suffix string
 		if tgLink != "" {
-			return fmt.Sprintf("%s\n\n👉 %s", bodyClean, tgLink)
+			suffix = fmt.Sprintf("\n\n👉 %s", tgLink)
 		}
-		return bodyClean
+
+		bodyRunes := []rune(bodyClean)
+		suffixRunes := []rune(suffix)
+		maxBodyRunes := 500 - len(suffixRunes)
+
+		if len(bodyRunes) > maxBodyRunes {
+			if maxBodyRunes > 3 {
+				bodyClean = string(bodyRunes[:maxBodyRunes-3]) + "..."
+			} else {
+				bodyClean = string(bodyRunes[:maxBodyRunes])
+			}
+		}
+
+		return bodyClean + suffix
 	}
 
 	hashtag := "#Nintendo"

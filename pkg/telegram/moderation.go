@@ -275,6 +275,8 @@ func buildTHPreviewText(article db.Article) string {
 	body := article.BodyThreads
 	if body == "" {
 		body = "(empty body threads)"
+	} else {
+		body = fmt.Sprintf("%s\n\n👉 https://t.me/... (link to Telegram post)", body)
 	}
 	bodyRunes := []rune(body)
 	if len(bodyRunes) > 1800 {
