@@ -140,6 +140,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("webhook: handler returned error", "error", err)
+		// If the error came from a callback button press, always answer the callback
+		// so the user sees a visible alert instead of a silently hanging button.
+		if update.CallbackQuery != nil {
+			testToken := strings.TrimSpace(os.Getenv("TEST_TELEGRAM_TOKEN"))
+			if bot, botErr := getBot(testToken); botErr == nil {
+				answerCallbackAlert(bot, update.CallbackQuery.ID, fmt.Sprintf("Error: %v", err))
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 		return
@@ -195,7 +203,9 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	case "pub_tg":
 		slog.Info("handleCallback: publishing article to TG", "article_id", articleID)
 		if err := publishPendingArticleTG(ctx, database, bot, testChannelID, articleID); err != nil {
-			return fmt.Errorf("publish TG article %d: %w", articleID, err)
+			slog.Error("handleCallback: TG publish failed", "error", err)
+			answerCallbackAlert(bot, cb.ID, fmt.Sprintf("Failed to publish to Telegram:\n%v", err))
+			return nil
 		}
 		
 		if cb.Message != nil {
