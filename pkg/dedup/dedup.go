@@ -84,11 +84,7 @@ func HashTitle(title string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// IsDuplicate returns true if title is too similar (Jaccard > 0.65)
-// to any title in the recent list (Layer 2 dedup).
-func IsDuplicate(title string, recent []string) bool {
-	return IsNearDuplicate(title, recent, 0.65)
-}
+
 
 // IsNearDuplicate returns true when any recent text reaches threshold.
 func IsNearDuplicate(text string, recent []string, threshold float64) bool {

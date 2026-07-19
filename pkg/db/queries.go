@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -316,6 +317,11 @@ func Cleanup(ctx context.Context, db *sql.DB) error {
 
 // RunMigration applies versioned SQL files from the migrations directory.
 func RunMigration(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INT PRIMARY KEY)`)
+	if err != nil {
+		return fmt.Errorf("create schema_migrations table: %w", err)
+	}
+
 	paths, err := filepath.Glob(filepath.Join("migrations", "*.sql"))
 	if err != nil {
 		return fmt.Errorf("list migrations: %w", err)
@@ -326,6 +332,26 @@ func RunMigration(ctx context.Context, db *sql.DB) error {
 	sort.Strings(paths)
 
 	for _, path := range paths {
+		baseName := filepath.Base(path)
+		parts := strings.Split(baseName, "_")
+		if len(parts) < 2 {
+			continue
+		}
+		
+		version, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return fmt.Errorf("parse migration version from %s: %w", path, err)
+		}
+
+		var applied bool
+		err = db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied)
+		if err != nil {
+			return fmt.Errorf("check migration version %d: %w", version, err)
+		}
+		if applied {
+			continue
+		}
+
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", path, err)
@@ -334,8 +360,24 @@ func RunMigration(ctx context.Context, db *sql.DB) error {
 		if sqlText == "" {
 			continue
 		}
-		if _, err := db.ExecContext(ctx, sqlText); err != nil {
+		
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin transaction for migration %s: %w", path, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, sqlText); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", path, err)
+		}
+		
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, version); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", path, err)
+		}
+		
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", path, err)
 		}
 	}
 	return nil

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -52,9 +53,59 @@ func getBot(token string) (*tgbotapi.BotAPI, error) {
 
 const editSessionTTL = 30 * time.Minute
 
+var telegramCIDRs = []string{
+	"149.154.160.0/20",
+	"91.108.4.0/22",
+}
+
+var parsedTelegramNets []*net.IPNet
+
+func init() {
+	for _, cidr := range telegramCIDRs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err == nil {
+			parsedTelegramNets = append(parsedTelegramNets, ipnet)
+		}
+	}
+}
+
+func isTelegramIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, ipnet := range parsedTelegramNets {
+		if ipnet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func getClientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		// Can contain multiple IPs, the first one is the client
+		ips := strings.Split(ip, ",")
+		return strings.TrimSpace(ips[0])
+	}
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	// Fallback to RemoteAddr (though on Vercel it might just be localhost or a load balancer)
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
+
 func Handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	clientIP := getClientIP(r)
+	if !isTelegramIP(clientIP) {
+		slog.Warn("webhook: request from unauthorized IP", "ip", clientIP)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -186,7 +237,7 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		}(),
 	)
 
-	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 
 	database, err := getDB(dsn)

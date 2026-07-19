@@ -1,10 +1,12 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/kkdai/youtube/v2"
 )
@@ -56,15 +58,37 @@ func getYouTubeStream(ctx context.Context, videoURL string) (io.ReadCloser, int6
 		return nil, 0, fmt.Errorf("video too large: %d bytes (limit %d)", selected.ContentLength, maxVideoBytes)
 	}
 
-	stream, size, err := client.GetStreamContext(ctx, vid, selected)
+	stream, _, err := client.GetStreamContext(ctx, vid, selected)
 	if err != nil {
 		return nil, 0, fmt.Errorf("get stream: %w", err)
 	}
 
 	// Wrap with a size cap so reads beyond the limit return EOF instead of OOM.
-	limited := struct {
-		io.Reader
-		io.Closer
-	}{io.LimitReader(stream, maxVideoBytes), stream}
-	return limited, size, nil
+	limitReader := io.LimitReader(stream, maxVideoBytes)
+
+	buf := new(bytes.Buffer)
+	
+	// Set a hard timeout for the download phase
+	readCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(buf, limitReader)
+		stream.Close()
+		errCh <- err
+	}()
+	
+	select {
+	case <-readCtx.Done():
+		stream.Close()
+		return nil, 0, fmt.Errorf("youtube download timed out: %w", readCtx.Err())
+	case err := <-errCh:
+		if err != nil && err != io.EOF {
+			return nil, 0, fmt.Errorf("youtube download error: %w", err)
+		}
+	}
+	
+	bReader := bytes.NewReader(buf.Bytes())
+	return io.NopCloser(bReader), int64(bReader.Len()), nil
 }
