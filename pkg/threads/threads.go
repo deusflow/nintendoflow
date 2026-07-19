@@ -40,10 +40,11 @@ func PostThread(ctx context.Context, text string) (string, error) {
 	q.Set("text", text)
 	q.Set("access_token", accessToken)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL+"?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(q.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("create container request build: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -67,16 +68,24 @@ func PostThread(ctx context.Context, text string) (string, error) {
 		return "", fmt.Errorf("empty container ID returned by Threads API")
 	}
 
+	// Step 1.5: Short pause to ensure Meta container status transitions to FINISHED
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(2 * time.Second):
+	}
+
 	// Step 2: Publish the container
 	publishURL := "https://graph.threads.net/v1.0/me/threads_publish"
 	pq := url.Values{}
 	pq.Set("creation_id", containerID)
 	pq.Set("access_token", accessToken)
 
-	publishReq, err := http.NewRequestWithContext(ctx, "POST", publishURL+"?"+pq.Encode(), nil)
+	publishReq, err := http.NewRequestWithContext(ctx, "POST", publishURL, strings.NewReader(pq.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("publish request build: %w", err)
 	}
+	publishReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	publishResp, err := httpClient.Do(publishReq)
 	if err != nil {

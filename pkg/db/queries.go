@@ -88,7 +88,7 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 	err := db.QueryRowContext(ctx, `
 		SELECT id, source_url, COALESCE(url_hash, ''), COALESCE(title_hash, ''), COALESCE(content_hash, ''), title_raw, COALESCE(title_ua, ''),
 		       COALESCE(body_ua, ''), COALESCE(body_threads, ''), COALESCE(video_url, ''), COALESCE(image_url, ''), source_name, source_type, COALESCE(article_type, 'news'), score,
-		       posted_tg, posted_threads, tg_message_id, COALESCE(ai_provider, ''), COALESCE(status, ''), COALESCE(event_tag, ''), published_at, created_at
+		       posted_tg, posted_threads, COALESCE(tg_message_id, 0), COALESCE(ai_provider, ''), COALESCE(status, ''), COALESCE(event_tag, ''), published_at, created_at
 		FROM articles
 		WHERE id=$1`, id).
 		Scan(
