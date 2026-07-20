@@ -341,47 +341,6 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		PublishedAt: selected.item.PublishedAt,
 	}
 
-	if cfg.TestModerationMode {
-		articleID, err := db.InsertArticle(ctx, database, article)
-		if err != nil {
-			slog.Error("insert pending article failed", "error", err)
-			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-			return
-		}
-		article.ID = articleID
-
-		if err := db.UpdateBodies(ctx, database, article.ID, cleanBody, threadsBody, rewriteProvider); err != nil {
-			slog.Warn("update bodies failed", "error", err)
-		}
-
-		testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
-		if err != nil {
-			slog.Error("test telegram bot init failed", "error", err)
-			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-			return
-		}
-
-		previewChatID := cfg.TestAdminChatID
-		if strings.TrimSpace(previewChatID) == "" {
-			previewChatID = cfg.TestChannelID
-		}
-
-		previewMessageID, err := telegram.SendModerationPreview(testBot, previewChatID, article)
-		if err != nil {
-			slog.Error("send moderation preview failed", "error", err, "article_id", article.ID)
-			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-			return
-		}
-
-		slog.Info("test moderation preview sent",
-			"article_id", article.ID,
-			"preview_chat_id", previewChatID,
-			"preview_message_id", previewMessageID,
-		)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-		return
-	}
-
 	if cfg.DryRun {
 		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
@@ -390,7 +349,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 
 	articleID, err := db.InsertArticle(ctx, database, article)
 	if err != nil {
-		slog.Error("insert selected article failed", "error", err)
+		slog.Error("insert pending article failed", "error", err)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
@@ -400,37 +359,38 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		slog.Warn("update bodies failed", "error", err)
 	}
 
-	bot, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
+	botToken := cfg.TestTelegramToken
+	if botToken == "" {
+		botToken = cfg.TelegramBotToken
+	}
+
+	bot, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		slog.Error("telegram bot init failed", "error", err)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
-	msgID, err := telegram.PostArticle(bot, cfg.TelegramChannelID, article)
+	previewChatID := cfg.TestAdminChatID
+	if strings.TrimSpace(previewChatID) == "" {
+		previewChatID = cfg.TestChannelID
+	}
+	if strings.TrimSpace(previewChatID) == "" {
+		previewChatID = cfg.TelegramChannelID
+	}
+
+	previewMessageID, err := telegram.SendModerationPreview(bot, previewChatID, article)
 	if err != nil {
-		slog.Error("telegram post failed", "error", err, "article_id", article.ID)
+		slog.Error("send moderation preview failed", "error", err, "article_id", article.ID)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
-	if err := db.MarkPostedTG(ctx, database, article.ID, msgID); err != nil {
-		slog.Warn("mark posted tg failed", "error", err)
-	}
-	if err := db.UpdateArticleStatus(ctx, database, article.ID, db.StatusPublished); err != nil {
-		slog.Warn("failed to update article status to published", "article_id", article.ID, "error", err)
-	}
-	posted = true
-	logStage("telegram_post", stageStart, runStart)
-
-	// Cross-post to Threads if configured
-	if err := threads.MaybeCrossPost(ctx, article, msgID); err != nil {
-		slog.Warn("threads cross-post skipped or failed", "error", err)
-	} else {
-		if err := db.MarkPostedThreads(ctx, database, article.ID); err != nil {
-			slog.Warn("mark posted threads failed", "error", err)
-		}
-	}
+	slog.Info("moderation preview sent",
+		"article_id", article.ID,
+		"preview_chat_id", previewChatID,
+		"preview_message_id", previewMessageID,
+	)
 
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 }

@@ -35,3 +35,4 @@ coverage.out
 *.bak
 *.tmp
 
+project_audit_log.md
