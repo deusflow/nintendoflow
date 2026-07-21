@@ -22,7 +22,6 @@ import (
 	"github.com/deuswork/nintendoflow/pkg/fetcher"
 	"github.com/deuswork/nintendoflow/pkg/scorer"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
-	"github.com/deuswork/nintendoflow/pkg/threads"
 )
 
 const (
