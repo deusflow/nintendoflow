@@ -25,7 +25,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          TEST_TELEGRAM_TOKEN: ${{ secrets.TEST_TELEGRAM_TOKEN }}
+          TEST_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TEST_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TEST_ADMIN_CHAT_ID: ${{ secrets.TEST_ADMIN_CHAT_ID }}
           TEST_MODERATION_MODE: "true"
