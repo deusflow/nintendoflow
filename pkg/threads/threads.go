@@ -205,7 +205,7 @@ func MaybeCrossPost(ctx context.Context, article db.Article, messageID int) erro
 
 	tgUsername := os.Getenv("TELEGRAM_CHANNEL_USERNAME")
 	if tgUsername == "" {
-		tgUsername = "deusflow"
+		tgUsername = "Nintendoflow"
 	}
 
 	threadText := FormatThread(article, tgUsername, messageID)

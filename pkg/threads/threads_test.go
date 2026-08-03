@@ -12,7 +12,7 @@ func TestFormatThread(t *testing.T) {
 		TitleRaw: "Super Mario 64: Безчасна Класика",
 		BodyUA:   "Це опис короткої новини для тестування.",
 	}
-	username := "deusflow"
+	username := "Nintendoflow"
 	msgID := 42
 
 	thread := FormatThread(article, username, msgID)
@@ -21,7 +21,7 @@ func TestFormatThread(t *testing.T) {
 		t.Errorf("Expected thread to contain news body, got: %q", thread)
 	}
 
-	if !strings.Contains(thread, "https://t.me/deusflow/42") {
+	if !strings.Contains(thread, "https://t.me/Nintendoflow/42") {
 		t.Errorf("Expected thread to contain Telegram link, got: %q", thread)
 	}
 
@@ -37,7 +37,7 @@ func TestFormatThreadTruncation(t *testing.T) {
 		TitleRaw: "Дуже довга новина про Маріо",
 		BodyUA:   longBody,
 	}
-	username := "deusflow"
+	username := "Nintendoflow"
 	msgID := 12345
 
 	thread := FormatThread(article, username, msgID)
@@ -51,7 +51,7 @@ func TestFormatThreadTruncation(t *testing.T) {
 		t.Errorf("Expected truncated teaser to contain title, got: %q", thread)
 	}
 
-	if !strings.Contains(thread, "https://t.me/deusflow/12345") {
+	if !strings.Contains(thread, "https://t.me/Nintendoflow/12345") {
 		t.Errorf("Expected truncated thread to still contain link")
 	}
 }
@@ -62,7 +62,7 @@ func TestFormatThreadWithBodyThreadsOverLimit(t *testing.T) {
 		TitleRaw:    "Маріо",
 		BodyThreads: longBodyThreads,
 	}
-	username := "deusflow"
+	username := "Nintendoflow"
 	msgID := 999
 
 	thread := FormatThread(article, username, msgID)
@@ -72,7 +72,7 @@ func TestFormatThreadWithBodyThreadsOverLimit(t *testing.T) {
 		t.Errorf("Formatted thread with BodyThreads is too long: %d characters (max 500)", len(threadRunes))
 	}
 
-	if !strings.Contains(thread, "https://t.me/deusflow/999") {
+	if !strings.Contains(thread, "https://t.me/Nintendoflow/999") {
 		t.Errorf("Expected thread to contain Telegram link, got: %q", thread)
 	}
 }
