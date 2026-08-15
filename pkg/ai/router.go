@@ -91,7 +91,7 @@ func buildProvider(ctx context.Context, name string, modelCfg RouterModel, apiKe
 	switch name {
 	case "gemini":
 		if model == "" {
-			model = "gemini-2.5-flash"
+			model = "gemini-3.5-flash"
 		}
 		return NewGeminiProvider(ctx, apiKey, model)
 	case "github_models", "github-models", "github":

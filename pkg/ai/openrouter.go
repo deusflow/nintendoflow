@@ -57,7 +57,7 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 	if len(parts) == 2 {
 		systemContent := strings.TrimSpace(parts[0])
 		if needJSON {
-			systemContent += "\nYou must respond in json format."
+			systemContent += "\nYou must respond in JSON format. All generated post text (telegram_html and threads_text) MUST be strictly in Ukrainian language."
 		}
 		messages = append(messages, map[string]string{"role": "system", "content": systemContent})
 		messages = append(messages, map[string]string{"role": "user", "content": strings.TrimSpace(parts[1])})

@@ -82,7 +82,7 @@ func Load() (*Config, error) {
 		TestAdminChatID:    os.Getenv("TEST_ADMIN_CHAT_ID"),
 		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
 		OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"), // optional
-		GeminiModel:        getEnvOrDefault("GEMINI_MODEL", "gemini-2.5-flash"),
+		GeminiModel:        getEnvOrDefault("GEMINI_MODEL", "gemini-3.5-flash"),
 		MinScore:           getEnvInt("MIN_SCORE", 4),
 		RecentTitlesHours:  getEnvInt("RECENT_TITLES_HOURS", 24),
 		DryRun:             os.Getenv("DRY_RUN") == "true",
