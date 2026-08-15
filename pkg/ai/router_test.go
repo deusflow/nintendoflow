@@ -16,7 +16,7 @@ func TestBuildProvidersFromConfigOrderAndFlags(t *testing.T) {
   "models": [
     {"name":"gemini","model":"gemini-2.5-flash","enabled":true,"api_key_env":"KEY_GEMINI"},
     {"name":"github_models","model":"gpt-5","enabled":true,"api_key_env":"KEY_GH"},
-    {"name":"groq","model":"llama-3.3-70b-versatile","enabled":true,"api_key_env":"KEY_GROQ"},
+    {"name":"groq","model":"openai/gpt-oss-120b","enabled":true,"api_key_env":"KEY_GROQ"},
     {"name":"openrouter","model":"deepseek/deepseek-chat:free","enabled":false,"api_key_env":"KEY_OR"}
   ]
 }`
@@ -35,7 +35,7 @@ func TestBuildProvidersFromConfigOrderAndFlags(t *testing.T) {
 	if providers[0].Name() != "github-models-gpt-5" {
 		t.Fatalf("unexpected provider[0]: %s", providers[0].Name())
 	}
-	if providers[1].Name() != "groq-llama-3.3-70b-versatile" {
+	if providers[1].Name() != "groq-openai/gpt-oss-120b" {
 		t.Fatalf("unexpected provider[1]: %s", providers[1].Name())
 	}
 }

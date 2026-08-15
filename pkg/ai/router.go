@@ -101,7 +101,7 @@ func buildProvider(ctx context.Context, name string, modelCfg RouterModel, apiKe
 		return NewGitHubModelsProvider(apiKey, model, modelCfg.BaseURL), nil
 	case "groq":
 		if model == "" {
-			model = "llama-3.3-70b-versatile"
+			model = "openai/gpt-oss-120b"
 		}
 		return NewGroqProvider(apiKey, model, modelCfg.BaseURL), nil
 	case "openrouter":
