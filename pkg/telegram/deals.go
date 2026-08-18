@@ -25,9 +25,10 @@ func FormatDealsDigestHTML(finalDeals []deals.Deal) string {
 	for i, d := range finalDeals {
 		oldPriceStr := formatPrice(d.OldPrice)
 		newPriceStr := formatPrice(d.NewPrice)
+		regionLabel := formatRegionLabel(d)
 
 		sb.WriteString(fmt.Sprintf("%d. <b>%s</b>\n", i+1, escapeHTML(d.Title)))
-		sb.WriteString(fmt.Sprintf("💰 <s>%s%s</s> → <b>%s%s</b> (-%d%%)\n", d.Currency, oldPriceStr, d.Currency, newPriceStr, d.Cut))
+		sb.WriteString(fmt.Sprintf("💰 <b>%s:</b> <s>%s%s</s> → <b>%s%s</b> (-%d%%)\n", regionLabel, d.Currency, oldPriceStr, d.Currency, newPriceStr, d.Cut))
 		
 		if d.Metacritic > 0 {
 			sb.WriteString(fmt.Sprintf("⭐ Metacritic: %d\n", d.Metacritic))
@@ -40,16 +41,44 @@ func FormatDealsDigestHTML(finalDeals []deals.Deal) string {
 		sb.WriteString("\n")
 	}
 
+	sb.WriteString("ℹ️ <i>Ціни вказані для європейського eShop (EUR / €). Для покупок підійдуть європейські карти або коди поповнення.</i>\n\n")
+
 	// Добавим реферальные ссылки Eneba для монетизации
 	enebaID := os.Getenv("ENEBA_AFFILIATE_ID")
 	if enebaID == "" {
 		enebaID = "deusflow"
 	}
 	sb.WriteString("🔌 <b>Придбати карти поповнення eShop:</b>\n")
+	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-europe-eur?af_id=%s\">Європа (EUR)</a> 🇪🇺\n", enebaID))
 	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-poland-pln?af_id=%s\">Польща (PLN)</a> 🇵🇱\n", enebaID))
 	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-united-states-usd?af_id=%s\">США (USD)</a> 🇺🇸\n", enebaID))
 
 	return strings.TrimSpace(sb.String())
+}
+
+func formatRegionLabel(d deals.Deal) string {
+	if d.RegionName != "" {
+		return d.RegionName
+	}
+	switch strings.ToUpper(d.Region) {
+	case "EU":
+		return "🇪🇺 eShop Європа"
+	case "PL":
+		return "🇵🇱 eShop Польща"
+	case "US":
+		return "🇺🇸 eShop США"
+	case "UK", "GB":
+		return "🇬🇧 eShop Британія"
+	default:
+		if d.Currency == "€" {
+			return "🇪🇺 eShop Європа"
+		} else if d.Currency == "$" {
+			return "🇺🇸 eShop США"
+		} else if d.Currency == "zł" || d.Currency == "PLN" {
+			return "🇵🇱 eShop Польща"
+		}
+		return "🌐 eShop"
+	}
 }
 
 // PostDealsDigest formats and sends a digest post with up to 10 deals.

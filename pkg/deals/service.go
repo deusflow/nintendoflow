@@ -43,8 +43,13 @@ func dealScore(d Deal) float64 {
 	if meta == 0 {
 		meta = 75.0 // fallback so we can still sort by discount/savings
 	}
+
+	regionMultiplier := 1.0
+	if d.Region == "EU" || d.Currency == "€" {
+		regionMultiplier = 1.3 // 30% priority boost for European eShop deals
+	}
 	
-	return meta * (float64(d.Cut) / 100.0) * savingsFactor
+	return meta * (float64(d.Cut) / 100.0) * savingsFactor * regionMultiplier
 }
 
 // FetchAndFilter is the main orchestrator:

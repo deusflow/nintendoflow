@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,24 +87,52 @@ func SearchReddit(gameTitle string) (string, error) {
 			s = strings.ReplaceAll(s, "\n", " ")
 			// Filter out URLs, too-short, or too-long sentences
 			if len(s) > 20 && len(s) < 150 && !strings.Contains(s, "http") && !strings.Contains(s, "[") {
-				return s + ".", nil
+				cleaned := CleanRedditQuote(s + ".")
+				if cleaned != "" {
+					return cleaned, nil
+				}
 			}
 		}
 	}
 
 	// Fallback: use the cleaned title of the top Reddit thread
 	topTitle := result.Data.Children[0].Data.Title
-	// Strip common prefixes like [eShop/US], [Deal], etc.
-	if idx := strings.Index(topTitle, "]"); idx != -1 {
-		topTitle = strings.TrimSpace(topTitle[idx+1:])
+	cleanedTitle := CleanRedditQuote(topTitle)
+	if len(cleanedTitle) > 100 {
+		cleanedTitle = cleanedTitle[:97] + "..."
 	}
-	if len(topTitle) > 100 {
-		topTitle = topTitle[:97] + "..."
-	}
-	if topTitle != "" {
-		slog.Debug("reddit fallback to thread title", "title", topTitle)
-		return "💬 " + topTitle, nil
+	if cleanedTitle != "" {
+		slog.Debug("reddit fallback to thread title", "title", cleanedTitle)
+		return cleanedTitle, nil
 	}
 
 	return "", nil
+}
+
+var (
+	regionTagRe    = regexp.MustCompile(`(?i)\[\s*(?:eshop\s*\/\s*)?(?:us|na|uk|eu|ca|au|jp|global|deal|sale)\s*\]`)
+	dollarPriceRe  = regexp.MustCompile(`(?i)(?:at\s+nintendo\s+eshop\s*)?-?\s*\$\s*\d+(?:\.\d{2})?\s*`)
+	cleanSpacingRe = regexp.MustCompile(`\s{2,}`)
+	dashParensRe   = regexp.MustCompile(`\s*[-–—:]\s*\(`)
+)
+
+// CleanRedditQuote strips foreign region markers and dollar prices to prevent confusion.
+func CleanRedditQuote(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.TrimPrefix(text, "💬")
+	text = strings.TrimSpace(text)
+
+	// Remove common bracket prefixes like [eShop/US], [Deal], etc.
+	if idx := strings.Index(text, "]"); idx != -1 && strings.Contains(text[:idx], "[") {
+		text = strings.TrimSpace(text[idx+1:])
+	}
+	text = regionTagRe.ReplaceAllString(text, "")
+	text = dollarPriceRe.ReplaceAllString(text, " ")
+	text = dashParensRe.ReplaceAllString(text, " (")
+	text = cleanSpacingRe.ReplaceAllString(text, " ")
+
+	// Clean up dangling punctuation
+	text = strings.Trim(text, " -:–—|;,.")
+	text = strings.TrimSpace(text)
+	return text
 }

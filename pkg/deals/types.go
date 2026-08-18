@@ -8,11 +8,13 @@ type Deal struct {
 	Title       string  // Game title
 	OldPrice    float64 // Original price
 	NewPrice    float64 // Discounted price
-	Currency    string  // Currency symbol (€, $, kr)
+	Currency    string  // Currency symbol (€, $, zł)
+	Region      string  // Region code (e.g. "EU", "PL", "US")
+	RegionName  string  // Human-readable region label (e.g. "🇪🇺 eShop Європа")
 	Cut         int     // Discount percentage (e.g. 50 for 50%)
 	Metacritic  int     // Metacritic score (0 if unknown)
 	URL         string  // Link to the deal
-	Source      string  // Data source: "ITAD" or "CheapShark"
+	Source      string  // Data source: "NintendoOfficial", "ITAD", etc.
 	RedditQuote string  // One-line description/recommendation from Reddit
 	PublishDate time.Time
 }

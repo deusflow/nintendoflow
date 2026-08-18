@@ -23,13 +23,18 @@ func IsDealRecentlyPublished(ctx context.Context, db *sql.DB, dealID string, day
 
 // MarkDealPublished inserts a deal into the history table.
 func MarkDealPublished(ctx context.Context, db *sql.DB, d Deal) error {
+	region := d.Region
+	if region == "" {
+		region = "EU"
+	}
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO deal_history (deal_id, title, old_price, new_price, currency, cut, metacritic, url, source, reddit_quote)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO deal_history (deal_id, title, old_price, new_price, currency, region, cut, metacritic, url, source, reddit_quote)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (deal_id) DO UPDATE SET
 			posted_at = NOW(),
 			cut = EXCLUDED.cut,
-			new_price = EXCLUDED.new_price`,
-		d.ID, d.Title, d.OldPrice, d.NewPrice, d.Currency, d.Cut, d.Metacritic, d.URL, d.Source, d.RedditQuote)
+			new_price = EXCLUDED.new_price,
+			region = EXCLUDED.region`,
+		d.ID, d.Title, d.OldPrice, d.NewPrice, d.Currency, region, d.Cut, d.Metacritic, d.URL, d.Source, d.RedditQuote)
 	return err
 }

@@ -74,6 +74,8 @@ func FetchNintendoOfficialDeals() ([]Deal, error) {
 			OldPrice:   doc.PriceRegular,
 			NewPrice:   doc.PriceDiscounted,
 			Currency:   "€",
+			Region:     "EU",
+			RegionName: "🇪🇺 eShop Європа",
 			Cut:        int(doc.PriceCut),
 			Metacritic: 0, // Nintendo API doesn't provide Metacritic scores
 			URL:        dealURL,
