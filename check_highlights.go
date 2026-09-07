@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load("../../GolandProjects/nintendoflow/.env")
+	_ = godotenv.Load()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is empty")

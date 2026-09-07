@@ -68,7 +68,7 @@ func (o *OpenRouterProvider) callModel(ctx context.Context, model string, prompt
 	payload := map[string]any{
 		"model":      model,
 		"messages":   messages,
-		"max_tokens": 500,
+		"max_tokens": 1500,
 	}
 	if needJSON {
 		payload["response_format"] = map[string]string{

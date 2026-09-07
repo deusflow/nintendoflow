@@ -70,7 +70,7 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 		SET score=GREATEST(articles.score, EXCLUDED.score),
 			article_type=COALESCE(NULLIF(articles.article_type,''), EXCLUDED.article_type),
 			status=CASE
-				WHEN articles.status='published' THEN articles.status
+				WHEN articles.status IN ('published', 'rejected') THEN articles.status
 				ELSE EXCLUDED.status
 			END,
 			event_tag=COALESCE(NULLIF(articles.event_tag,''), EXCLUDED.event_tag)

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/deuswork/nintendoflow/pkg/ai"
 	"github.com/deuswork/nintendoflow/pkg/config"
@@ -83,8 +84,8 @@ func main() {
 	}
 	slog.Info("AI router ready", "config_path", aiConfigPath, "providers", strings.Join(providerNames, ","))
 
-	// Assuming constants maxAICallsPerRun and aiCallDelay from old main.go
-	manager := ai.NewManager(providers, 4, 20)
+	// maxAICallsPerRun=4, delay=20s between calls to respect API limits
+	manager := ai.NewManager(providers, 4, 20*time.Second)
 
 	// -- 4.5. Check command-line mode ------------------------------------
 	mode := "news"

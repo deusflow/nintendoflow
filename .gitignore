@@ -6,6 +6,11 @@
 *.out
 /export
 /bot
+/deals
+/deals-bot
+/main
+*.db
+log.txt
 
 
 # Dependency directories (remove the comment below if you use Go modules)

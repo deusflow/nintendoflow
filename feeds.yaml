@@ -164,14 +164,14 @@
   require_anchor: false
   needs_redirect_resolve: false
 
-- url: "https://www.famitsu.com/rss/article.xml"
+- url: "https://news.google.com/rss/search?q=site:famitsu.com+Nintendo&hl=ja&gl=JP&ceid=JP:ja"
   name: "Famitsu"
   lang: jp
   priority: 85
   active: true
   type: media
   require_anchor: true
-  needs_redirect_resolve: false
+  needs_redirect_resolve: true
 
 - url: "https://automaton-media.com/feed/"
   name: "Automaton"

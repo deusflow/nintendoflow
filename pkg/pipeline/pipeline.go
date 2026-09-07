@@ -560,6 +560,12 @@ func sortCandidates(candidates []candidate) {
 			if candidates[i].item.SourcePriority != candidates[j].item.SourcePriority {
 				return candidates[i].item.SourcePriority > candidates[j].item.SourcePriority
 			}
+			if candidates[i].item.PublishedAt == nil {
+				return false
+			}
+			if candidates[j].item.PublishedAt == nil {
+				return true
+			}
 			return candidates[i].item.PublishedAt.After(*candidates[j].item.PublishedAt)
 		}
 		return candidates[i].rankScore > candidates[j].rankScore

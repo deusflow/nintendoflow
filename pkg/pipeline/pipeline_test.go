@@ -42,3 +42,25 @@ func TestSortCandidatesPrefersHigherRankScoreThenSourcePriority(t *testing.T) {
 		t.Fatalf("expected higher-priority source to rank first, got %s", candidates[0].item.Title)
 	}
 }
+
+func TestSortCandidatesWithNilPublishedAtDoesNotPanic(t *testing.T) {
+	now := time.Now()
+	candidates := []candidate{
+		{
+			item:      fetcher.Item{Title: "with-nil-date", SourcePriority: 100, PublishedAt: nil},
+			score:     100,
+			rankScore: 100,
+		},
+		{
+			item:      fetcher.Item{Title: "with-valid-date", SourcePriority: 100, PublishedAt: &now},
+			score:     100,
+			rankScore: 100,
+		},
+	}
+
+	// Should not panic on nil pointer dereference
+	sortCandidates(candidates)
+	if candidates[0].item.Title != "with-valid-date" {
+		t.Fatalf("expected candidate with valid date to rank ahead of nil date, got %s", candidates[0].item.Title)
+	}
+}

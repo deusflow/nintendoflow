@@ -131,12 +131,12 @@ func main() {
 			return
 		}
 		slog.Info("deals digest posted successfully")
-	}
 
-	// -- 6. Mark deals as published in DB --
-	for _, d := range finalDeals {
-		if err := deals.MarkDealPublished(ctx, database, d); err != nil {
-			slog.Warn("failed to mark deal as published", "deal", d.Title, "error", err)
+		// Mark deals as published in DB only when directly posted
+		for _, d := range finalDeals {
+			if err := deals.MarkDealPublished(ctx, database, d); err != nil {
+				slog.Warn("failed to mark deal as published", "deal", d.Title, "error", err)
+			}
 		}
 	}
 

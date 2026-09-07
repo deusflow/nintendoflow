@@ -24,12 +24,27 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 	imageURL := strings.TrimSpace(article.ImageURL)
 	sourceURL := strings.TrimSpace(article.SourceURL)
 
+	markup := buildInlineKeyboard(sourceURL, article.SourceName, videoURL)
+
+	// --- SCENARIO 0: DEALS DIGEST (ALWAYS SEND AS TEXT MESSAGE) ---
+	if article.ArticleType == "deals" || article.SourceType == "deals" {
+		msg := tgbotapi.NewMessageToChannel(channelID, article.BodyUA)
+		msg.ParseMode = "HTML"
+		msg.DisableWebPagePreview = true
+		if markup != nil {
+			msg.ReplyMarkup = markup
+		}
+		sentMsg, err := bot.Send(msg)
+		if err != nil {
+			return 0, fmt.Errorf("telegram send deals message: %w", err)
+		}
+		return sentMsg.MessageID, nil
+	}
+
 	// Ensure an image exists if all video uploads fail
 	if imageURL == "" {
 		imageURL = getFallbackImageURL(article.ArticleType)
 	}
-
-	markup := buildInlineKeyboard(sourceURL, article.SourceName, videoURL)
 
 	// --- SCENARIO A: WE HAVE A VIDEO ---
 	if videoURL != "" {

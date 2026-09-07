@@ -157,7 +157,11 @@ Example JSON output:
 	}
 
 	// 5. Send moderation preview
-	testBot, err := tgbotapi.NewBotAPI(cfg.TestTelegramToken)
+	botToken := cfg.TestTelegramToken
+	if botToken == "" {
+		botToken = cfg.TelegramBotToken
+	}
+	testBot, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		slog.Error("telegram bot init failed", "error", err)
 		return
@@ -166,6 +170,9 @@ Example JSON output:
 	previewChatID := cfg.TestAdminChatID
 	if strings.TrimSpace(previewChatID) == "" {
 		previewChatID = cfg.TestChannelID
+	}
+	if strings.TrimSpace(previewChatID) == "" {
+		previewChatID = cfg.TelegramChannelID
 	}
 
 	previewMessageID, err := telegram.SendModerationPreview(testBot, previewChatID, article)

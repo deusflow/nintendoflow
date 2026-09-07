@@ -56,6 +56,7 @@ const editSessionTTL = 30 * time.Minute
 var telegramCIDRs = []string{
 	"149.154.160.0/20",
 	"91.108.4.0/22",
+	"2001:67c:4e8::/48",
 }
 
 var parsedTelegramNets []*net.IPNet
@@ -83,17 +84,22 @@ func isTelegramIP(ipStr string) bool {
 }
 
 func getClientIP(r *http.Request) string {
+	rawIP := ""
 	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
 		// Can contain multiple IPs, the first one is the client
 		ips := strings.Split(ip, ",")
-		return strings.TrimSpace(ips[0])
+		rawIP = strings.TrimSpace(ips[0])
+	} else if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		rawIP = strings.TrimSpace(ip)
+	} else {
+		rawIP = r.RemoteAddr
 	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return strings.TrimSpace(ip)
+
+	// Strip port if present (handles both "1.2.3.4:5678" and "[2001:...]:5678")
+	if host, _, err := net.SplitHostPort(rawIP); err == nil {
+		return host
 	}
-	// Fallback to RemoteAddr (though on Vercel it might just be localhost or a load balancer)
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return ip
+	return strings.Trim(rawIP, "[]")
 }
 
 func Handler(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +201,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		// so the user sees a visible alert instead of a silently hanging button.
 		if update.CallbackQuery != nil {
 			testToken := strings.TrimSpace(os.Getenv("TEST_TELEGRAM_TOKEN"))
+			if testToken == "" {
+				testToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+			}
 			if bot, botErr := getBot(testToken); botErr == nil {
 				answerCallbackAlert(bot, update.CallbackQuery.ID, fmt.Sprintf("Error: %v", err))
 			}
@@ -214,10 +223,16 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	}
 
 	testToken := strings.TrimSpace(os.Getenv("TEST_TELEGRAM_TOKEN"))
+	if testToken == "" {
+		testToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	}
 	testChannelID := strings.TrimSpace(os.Getenv("TEST_CHANNEL_ID"))
+	if testChannelID == "" {
+		testChannelID = strings.TrimSpace(os.Getenv("TELEGRAM_CHANNEL_ID"))
+	}
 	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if testToken == "" || testChannelID == "" || dsn == "" {
-		return fmt.Errorf("missing required env for webhook (TEST_TELEGRAM_TOKEN, TEST_CHANNEL_ID, DATABASE_URL)")
+		return fmt.Errorf("missing required env for webhook (TEST_TELEGRAM_TOKEN/TELEGRAM_BOT_TOKEN, TEST_CHANNEL_ID/TELEGRAM_CHANNEL_ID, DATABASE_URL)")
 	}
 
 	action, articleID, err := telegram.ParseModerationCallbackData(cb.Data)
@@ -408,9 +423,12 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	}
 
 	testToken := strings.TrimSpace(os.Getenv("TEST_TELEGRAM_TOKEN"))
+	if testToken == "" {
+		testToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	}
 	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if testToken == "" || dsn == "" {
-		return fmt.Errorf("missing required env for webhook edit mode (TEST_TELEGRAM_TOKEN=%v DATABASE_URL=%v)",
+		return fmt.Errorf("missing required env for webhook edit mode (TEST_TELEGRAM_TOKEN/TELEGRAM_BOT_TOKEN=%v DATABASE_URL=%v)",
 			testToken != "", dsn != "")
 	}
 
