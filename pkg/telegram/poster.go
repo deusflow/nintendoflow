@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +22,11 @@ var telegramHTTPClient = &http.Client{Timeout: 15 * time.Second}
 // PostArticle sends an article to the Telegram channel and returns its message ID.
 // If the article has an image, sendPhoto is used; otherwise sendMessage.
 func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (int, error) {
+	baseChat, err := newBaseChat(channelID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid channel/chat id %q: %w", channelID, err)
+	}
+
 	videoURL := strings.TrimSpace(article.VideoURL)
 	imageURL := strings.TrimSpace(article.ImageURL)
 	sourceURL := strings.TrimSpace(article.SourceURL)
@@ -28,9 +35,12 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 
 	// --- SCENARIO 0: DEALS DIGEST (ALWAYS SEND AS TEXT MESSAGE) ---
 	if article.ArticleType == "deals" || article.SourceType == "deals" {
-		msg := tgbotapi.NewMessageToChannel(channelID, article.BodyUA)
-		msg.ParseMode = "HTML"
-		msg.DisableWebPagePreview = true
+		msg := tgbotapi.MessageConfig{
+			BaseChat:              baseChat,
+			Text:                  article.BodyUA,
+			ParseMode:             "HTML",
+			DisableWebPagePreview: true,
+		}
 		if markup != nil {
 			msg.ReplyMarkup = markup
 		}
@@ -57,7 +67,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 				if size < 49*1024*1024 {
 					video := tgbotapi.VideoConfig{
 						BaseFile: tgbotapi.BaseFile{
-							BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+							BaseChat: baseChat,
 							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
 						},
 						Caption:   buildCaption(&article, 1024),
@@ -99,7 +109,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 			// Non-youtube video (direct remote URL mp4)
 			video := tgbotapi.VideoConfig{
 				BaseFile: tgbotapi.BaseFile{
-					BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+					BaseChat: baseChat,
 					File:     tgbotapi.FileURL(videoURL),
 				},
 				Caption:   buildCaption(&article, 1024),
@@ -117,7 +127,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 	// --- SCENARIO B: NO VIDEO, OR NATIVE VIDEO FAILED. Send as Photo ---
 	photo := tgbotapi.PhotoConfig{
 		BaseFile: tgbotapi.BaseFile{
-			BaseChat: tgbotapi.BaseChat{ChannelUsername: channelID},
+			BaseChat: baseChat,
 			File:     tgbotapi.FileURL(imageURL),
 		},
 		Caption:   buildCaption(&article, 1024),
@@ -133,8 +143,11 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 	}
 
 	// --- SCENARIO C: ABSOLUTE LAST RESORT ---
-	msg := tgbotapi.NewMessageToChannel(channelID, buildCaption(&article, 4096))
-	msg.ParseMode = "HTML"
+	msg := tgbotapi.MessageConfig{
+		BaseChat:  baseChat,
+		Text:      buildCaption(&article, 4096),
+		ParseMode: "HTML",
+	}
 	if markup != nil {
 		msg.ReplyMarkup = markup
 	}
@@ -143,6 +156,14 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 		return 0, fmt.Errorf("telegram sendMessage: %w", err)
 	}
 	return sentMsg.MessageID, nil
+}
+
+func newBaseChat(chatID string) (tgbotapi.BaseChat, error) {
+	chat, channel, err := resolveChat(chatID)
+	if err != nil {
+		return tgbotapi.BaseChat{}, err
+	}
+	return tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel}, nil
 }
 
 func getFallbackImageURL(articleType string) string {
@@ -169,15 +190,20 @@ func sendTextWithLinkPreview(bot *tgbotapi.BotAPI, chatID string, text string, p
 		ShowAboveText    bool   `json:"show_above_text,omitempty"`
 	}
 	type rawSendMessageReq struct {
-		ChatID             string                         `json:"chat_id"`
+		ChatID             any                            `json:"chat_id"`
 		Text               string                         `json:"text"`
 		ParseMode          string                         `json:"parse_mode,omitempty"`
 		LinkPreviewOptions *rawLinkPreview                `json:"link_preview_options,omitempty"`
 		ReplyMarkup        *tgbotapi.InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 	}
 
+	var targetChat any = chatID
+	if num, err := strconv.ParseInt(chatID, 10, 64); err == nil {
+		targetChat = num
+	}
+
 	req := rawSendMessageReq{
-		ChatID:    chatID,
+		ChatID:    targetChat,
 		Text:      text,
 		ParseMode: "HTML",
 		LinkPreviewOptions: &rawLinkPreview{
@@ -273,27 +299,59 @@ func buildCaption(article *db.Article, maxLen int) string {
 	}
 
 	body := stripSourceFooter(article.BodyUA)
-
 	full := prefix + body
 
-	// Leave space for ellipsis just in case
-	reserve := 3
+	return safeTruncateHTML(full, maxLen)
+}
 
-	runes := []rune(full)
-	var finalBody string
-	if len(runes) <= maxLen-reserve {
-		finalBody = full
-	} else {
-		bodyRunes := []rune(body)
-		allowed := maxLen - reserve - len([]rune(prefix))
-		if allowed > 0 && allowed < len(bodyRunes) {
-			finalBody = prefix + string(bodyRunes[:allowed]) + "..."
-		} else {
-			finalBody = string(runes[:maxLen-reserve]) + "..."
+// safeTruncateHTML truncates an HTML string to maxLen runes without breaking open tags or partial brackets.
+func safeTruncateHTML(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+
+	targetLen := maxLen - 3
+	if targetLen <= 0 {
+		return "..."
+	}
+
+	truncated := string(runes[:targetLen])
+
+	// If cut in the middle of a tag (<tag or </tag), strip back to before '<'
+	if lastLt := strings.LastIndex(truncated, "<"); lastLt != -1 {
+		lastGt := strings.LastIndex(truncated, ">")
+		if lastGt < lastLt {
+			truncated = truncated[:lastLt]
 		}
 	}
 
-	return finalBody
+	truncated = strings.TrimRight(truncated, " \t\n\r") + "..."
+
+	// Track unclosed tags and append closing tags in reverse order
+	var openTags []string
+	tagRe := regexp.MustCompile(`</?([a-zA-Z0-9]+)[^>]*>`)
+	matches := tagRe.FindAllStringSubmatch(truncated, -1)
+	for _, m := range matches {
+		fullTag := m[0]
+		tagName := strings.ToLower(m[1])
+		if strings.HasPrefix(fullTag, "</") {
+			for i := len(openTags) - 1; i >= 0; i-- {
+				if openTags[i] == tagName {
+					openTags = append(openTags[:i], openTags[i+1:]...)
+					break
+				}
+			}
+		} else if !strings.HasSuffix(fullTag, "/>") {
+			openTags = append(openTags, tagName)
+		}
+	}
+
+	for i := len(openTags) - 1; i >= 0; i-- {
+		truncated += "</" + openTags[i] + ">"
+	}
+
+	return truncated
 }
 
 // stripSourceFooter removes stray inline-link lines (🔗) left from older

@@ -125,6 +125,13 @@ func main() {
 			return
 		}
 		slog.Info("deals moderation preview sent", "article_id", article.ID, "msg_id", previewMessageID)
+
+		// Mark deals in history so the next run selects fresh games
+		for _, d := range finalDeals {
+			if err := deals.MarkDealPublished(ctx, database, d); err != nil {
+				slog.Warn("failed to mark deal as published", "deal", d.Title, "error", err)
+			}
+		}
 	} else {
 		if err := telegram.PostDealsDigest(bot, chatID, finalDeals); err != nil {
 			slog.Error("telegram deals post failed", "error", err)
@@ -132,7 +139,7 @@ func main() {
 		}
 		slog.Info("deals digest posted successfully")
 
-		// Mark deals as published in DB only when directly posted
+		// Mark deals as published in DB
 		for _, d := range finalDeals {
 			if err := deals.MarkDealPublished(ctx, database, d); err != nil {
 				slog.Warn("failed to mark deal as published", "deal", d.Title, "error", err)

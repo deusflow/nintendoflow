@@ -68,8 +68,8 @@ func getYouTubeStream(ctx context.Context, videoURL string) (io.ReadCloser, int6
 
 	buf := new(bytes.Buffer)
 	
-	// Set a hard timeout for the download phase
-	readCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	// Set a hard timeout for the download phase (15s ensures serverless/webhook resilience)
+	readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	
 	errCh := make(chan error, 1)

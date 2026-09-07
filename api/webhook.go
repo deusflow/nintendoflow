@@ -667,6 +667,9 @@ func publishPendingArticleTG(ctx context.Context, database *sql.DB, bot *tgbotap
 	if article.PostedTG {
 		return nil
 	}
+	if article.Status == db.StatusRejected {
+		return fmt.Errorf("article %d was rejected and cannot be published", articleID)
+	}
 	
 	msgID, err := telegram.PostArticle(bot, channelID, article)
 	if err != nil {

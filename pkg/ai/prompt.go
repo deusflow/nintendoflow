@@ -2,6 +2,7 @@ package ai
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -13,27 +14,29 @@ type NewsInput struct {
 	DevilTheory string
 }
 
-// sanitizeInput removes potential prompt injection attempts from user-supplied data.
+// sanitizeInput removes potential prompt injection attempts from user-supplied data without corrupting legitimate vocabulary.
 func sanitizeInput(s string) string {
-	dangerous := []string{
-		// structural delimiters used in the prompt template
-		"=== ", "ЗАВДАННЯ", "ІНСТРУКЦ",
-		// output control tokens the model should never see in input
-		"SKIP", "TYPE:",
-		// common English injection phrases
-		"ignore previous", "forget instructions",
-		"ignore all", "disregard", "new instructions",
-		"you are now", "act as", "jailbreak",
-		// role/system header injections
-		"SYSTEM:", "DEVELOPER:", "RULES:", "ASSISTANT:",
-		// markdown code block wrappers that can embed system context
-		"```system", "```instructions", "```prompt",
+	// Structural delimiters and markdown injection blocks
+	exactToRemove := []string{
+		"=== ", "===", "```system", "```instructions", "```prompt",
 	}
 	result := s
-	for _, d := range dangerous {
+	for _, d := range exactToRemove {
 		result = strings.ReplaceAll(result, d, "")
-		result = strings.ReplaceAll(result, strings.ToLower(d), "")
 	}
+
+	// Case-insensitive prompt injection phrases (multi-word / role tokens)
+	injectionPatterns := []string{
+		"ignore previous", "forget instructions", "ignore all instructions",
+		"disregard instructions", "new instructions", "jailbreak",
+		"system:", "developer:", "rules:", "assistant:",
+		"завдання:", "інструкції:",
+	}
+	for _, p := range injectionPatterns {
+		re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(p))
+		result = re.ReplaceAllString(result, "")
+	}
+
 	return strings.TrimSpace(result)
 }
 
