@@ -76,3 +76,20 @@ func TestFormatThreadWithBodyThreadsOverLimit(t *testing.T) {
 		t.Errorf("Expected thread to contain Telegram link, got: %q", thread)
 	}
 }
+
+func TestParseMetaError(t *testing.T) {
+	// OAuth 190 (token expired)
+	body190 := []byte(`{"error":{"message":"Error validating access token: Session has expired","type":"OAuthException","code":190,"error_subcode":463}}`)
+	err190 := parseMetaError(body190, 400)
+	if !strings.Contains(err190.Error(), "OAuth 190") || !strings.Contains(err190.Error(), "expired") {
+		t.Errorf("expected expired token guidance, got: %v", err190)
+	}
+
+	// Code 100 (permission/parameter error)
+	body100 := []byte(`{"error":{"message":"Unsupported post request. Object with ID 'me' does not exist","type":"GraphMethodException","code":100}}`)
+	err100 := parseMetaError(body100, 400)
+	if !strings.Contains(err100.Error(), "Code 100") {
+		t.Errorf("expected code 100 guidance, got: %v", err100)
+	}
+}
+

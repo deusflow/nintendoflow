@@ -14,16 +14,16 @@
 - url: "https://www.gematsu.com/feed"
   name: "Gematsu"
   lang: en
-  priority: 100
+  priority: 70
   active: true
-  type: insider
-  require_anchor: false
+  type: media
+  require_anchor: true
   needs_redirect_resolve: false
 
 - url: "https://insider-gaming.com/feed/"
   name: "Insider Gaming"
   lang: en
-  priority: 100
+  priority: 95
   active: true
   type: insider
   require_anchor: true
@@ -33,10 +33,28 @@
 # МЕДІА — Nintendo-спеціалізовані
 # ============================================================
 
+- url: "https://www.nintendolife.com/feeds/latest"
+  name: "Nintendo Life"
+  lang: en
+  priority: 120
+  active: true
+  type: media
+  require_anchor: false
+  needs_redirect_resolve: false
+
+- url: "https://gonintendo.com/feeds/news.xml"
+  name: "GoNintendo"
+  lang: en
+  priority: 105
+  active: true
+  type: media
+  require_anchor: false
+  needs_redirect_resolve: false
+
 - url: "https://nintendoeverything.com/feed/"
   name: "Nintendo Everything"
   lang: en
-  priority: 85
+  priority: 90
   active: true
   type: media
   require_anchor: false
@@ -106,28 +124,37 @@
 # GOOGLE NEWS RSS
 # ============================================================
 
-- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+insider+leak&hl=en-US&gl=US&ceid=US:en"
-  name: "Google News - Nintendo insider"
+- url: "https://news.google.com/rss/search?q=Nintendo+(Direct+OR+Furukawa+OR+Miyamoto+OR+sales+OR+lawsuit+OR+patent+OR+Museum+OR+earnings)+when:3d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo Corporate & Direct"
   lang: en
-  priority: 50
+  priority: 130
   active: true
   type: aggregator
   require_anchor: true
   needs_redirect_resolve: true
 
-- url: "https://news.google.com/rss/search?q=Nintendo+Direct+announce+2026&hl=en-US&gl=US&ceid=US:en"
+- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+(sales+OR+update+OR+games+OR+hardware)+when:3d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo Switch 2"
+  lang: en
+  priority: 80
+  active: true
+  type: aggregator
+  require_anchor: true
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Direct+(announce+OR+rumor+OR+recap)+when:3d&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo Direct"
   lang: en
-  priority: 50
+  priority: 90
   active: true
   type: aggregator
   require_anchor: true
   needs_redirect_resolve: true
 
-- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+Digital+Foundry+specs+performance&hl=en-US&gl=US&ceid=US:en"
+- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+Digital+Foundry+performance&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Tech & Specs"
   lang: en
-  priority: 50
+  priority: 75
   active: true
   type: aggregator
   require_anchor: true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -25,16 +26,120 @@ type PublishResponse struct {
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
+type metaAPIError struct {
+	Error struct {
+		Message      string `json:"message"`
+		Type         string `json:"type"`
+		Code         int    `json:"code"`
+		ErrorSubcode int    `json:"error_subcode"`
+		FBTraceID    string `json:"fbtrace_id"`
+	} `json:"error"`
+}
+
+func parseMetaError(body []byte, statusCode int) error {
+	var metaErr metaAPIError
+	if err := json.Unmarshal(body, &metaErr); err == nil && metaErr.Error.Message != "" {
+		switch metaErr.Error.Code {
+		case 190:
+			return fmt.Errorf("Meta token expired or invalid (OAuth 190, subcode %d): %s. Please generate a fresh THREADS_ACCESS_TOKEN and update it in Vercel / GitHub secrets",
+				metaErr.Error.ErrorSubcode, metaErr.Error.Message)
+		case 100:
+			return fmt.Errorf("Meta parameter/permission error (Code 100, subcode %d): %s. Ensure token has threads_content_publish scope",
+				metaErr.Error.ErrorSubcode, metaErr.Error.Message)
+		default:
+			return fmt.Errorf("Meta API error (HTTP %d, Code %d, Type %s): %s",
+				statusCode, metaErr.Error.Code, metaErr.Error.Type, metaErr.Error.Message)
+		}
+	}
+	return fmt.Errorf("Meta API returned HTTP %d: %s", statusCode, string(body))
+}
+
+func getThreadsUserID(ctx context.Context, accessToken string) string {
+	if envID := strings.TrimSpace(os.Getenv("THREADS_USER_ID")); envID != "" {
+		return envID
+	}
+	// Fetch actual user ID via /me to avoid Code 100 "Object with ID 'me' does not exist"
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://graph.threads.net/v1.0/me?fields=id", nil)
+	if err == nil {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		resp, err := httpClient.Do(req)
+		if err == nil {
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode == http.StatusOK {
+				var data struct {
+					ID string `json:"id"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&data); err == nil && data.ID != "" {
+					return data.ID
+				}
+			}
+		}
+	}
+	return "me"
+}
+
+type containerStatusResp struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func waitForContainer(ctx context.Context, containerID, accessToken string) error {
+	statusURL := fmt.Sprintf("https://graph.threads.net/v1.0/%s?fields=status,error_message&access_token=%s",
+		url.PathEscape(containerID), url.QueryEscape(accessToken))
+
+	for attempt := 1; attempt <= 5; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt*400) * time.Millisecond):
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			continue
+		}
+		var cs containerStatusResp
+		decodeErr := json.NewDecoder(resp.Body).Decode(&cs)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			continue
+		}
+
+		switch cs.Status {
+		case "FINISHED", "PUBLISHED":
+			return nil
+		case "ERROR":
+			if cs.ErrorMessage != "" {
+				return fmt.Errorf("threads container failed: %s", cs.ErrorMessage)
+			}
+			return fmt.Errorf("threads media container processing failed")
+		case "EXPIRED":
+			return fmt.Errorf("threads container expired")
+		case "IN_PROGRESS":
+			// wait for next attempt
+		}
+	}
+	return nil
+}
+
 // PostThread publishes a text thread to the Meta Threads API.
 func PostThread(ctx context.Context, text string) (string, error) {
 	accessToken := strings.TrimSpace(os.Getenv("THREADS_ACCESS_TOKEN"))
 	if accessToken == "" {
-		return "", fmt.Errorf("missing THREADS_ACCESS_TOKEN in environment")
+		return "", fmt.Errorf("missing THREADS_ACCESS_TOKEN in environment. Check Vercel/GitHub secrets")
 	}
 
+	userID := getThreadsUserID(ctx, accessToken)
+
 	// Step 1: Create a container for the text post
-	apiURL := "https://graph.threads.net/v1.0/me/threads"
-	
+	apiURL := fmt.Sprintf("https://graph.threads.net/v1.0/%s/threads", userID)
+
 	q := url.Values{}
 	q.Set("media_type", "TEXT")
 	q.Set("text", text)
@@ -45,6 +150,7 @@ func PostThread(ctx context.Context, text string) (string, error) {
 		return "", fmt.Errorf("create container request build: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -52,14 +158,13 @@ func PostThread(ctx context.Context, text string) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		var errData map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errData)
-		return "", fmt.Errorf("create container returned status %d: %v", resp.StatusCode, errData)
+		return "", parseMetaError(bodyBytes, resp.StatusCode)
 	}
 
 	var cr ContainerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+	if err := json.Unmarshal(bodyBytes, &cr); err != nil {
 		return "", fmt.Errorf("decode container response: %w", err)
 	}
 
@@ -68,15 +173,13 @@ func PostThread(ctx context.Context, text string) (string, error) {
 		return "", fmt.Errorf("empty container ID returned by Threads API")
 	}
 
-	// Step 1.5: Short pause to ensure Meta container status transitions to FINISHED
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-time.After(2 * time.Second):
+	// Step 1.5: Poll container status until ready
+	if err := waitForContainer(ctx, containerID, accessToken); err != nil {
+		return "", err
 	}
 
 	// Step 2: Publish the container
-	publishURL := "https://graph.threads.net/v1.0/me/threads_publish"
+	publishURL := fmt.Sprintf("https://graph.threads.net/v1.0/%s/threads_publish", userID)
 	pq := url.Values{}
 	pq.Set("creation_id", containerID)
 	pq.Set("access_token", accessToken)
@@ -86,6 +189,7 @@ func PostThread(ctx context.Context, text string) (string, error) {
 		return "", fmt.Errorf("publish request build: %w", err)
 	}
 	publishReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	publishReq.Header.Set("Authorization", "Bearer "+accessToken)
 
 	publishResp, err := httpClient.Do(publishReq)
 	if err != nil {
@@ -93,14 +197,13 @@ func PostThread(ctx context.Context, text string) (string, error) {
 	}
 	defer func() { _ = publishResp.Body.Close() }()
 
+	publishBody, _ := io.ReadAll(publishResp.Body)
 	if publishResp.StatusCode != http.StatusOK {
-		var errData map[string]interface{}
-		_ = json.NewDecoder(publishResp.Body).Decode(&errData)
-		return "", fmt.Errorf("publish returned status %d: %v", publishResp.StatusCode, errData)
+		return "", parseMetaError(publishBody, publishResp.StatusCode)
 	}
 
 	var pr PublishResponse
-	if err := json.NewDecoder(publishResp.Body).Decode(&pr); err != nil {
+	if err := json.Unmarshal(publishBody, &pr); err != nil {
 		return "", fmt.Errorf("decode publish response: %w", err)
 	}
 

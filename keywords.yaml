@@ -21,6 +21,125 @@ topics:
         role: anchor
         weight: 20
 
+  nintendo_company:
+    enabled: true
+    priority: 180
+    keywords:
+      # Керівництво та ключові особи
+      - word: "furukawa"
+        role: anchor
+        weight: 35
+      - word: "shuntaro furukawa"
+        role: anchor
+        weight: 40
+      - word: "miyamoto"
+        role: anchor
+        weight: 35
+      - word: "shigeru miyamoto"
+        role: anchor
+        weight: 40
+      - word: "eiji aonuma"
+        role: anchor
+        weight: 35
+      - word: "aonuma"
+        role: anchor
+        weight: 30
+      - word: "yoshiaki koizumi"
+        role: anchor
+        weight: 30
+      - word: "doug bowser"
+        role: anchor
+        weight: 25
+
+      # Фінансові результати, бізнес, продажі
+      - word: "financial results"
+        role: anchor
+        weight: 30
+      - word: "earnings report"
+        role: anchor
+        weight: 30
+      - word: "fiscal year"
+        role: anchor
+        weight: 25
+      - word: "hardware sales"
+        role: anchor
+        weight: 35
+      - word: "switch sales"
+        role: anchor
+        weight: 35
+      - word: "million units"
+        role: anchor
+        weight: 25
+      - word: "shareholder meeting"
+        role: anchor
+        weight: 30
+      - word: "annual report"
+        role: anchor
+        weight: 25
+
+      # Платформна екосистема, прошивки, сервіси
+      - word: "nintendo switch online"
+        role: anchor
+        weight: 30
+      - word: "nso"
+        role: anchor
+        weight: 25
+      - word: "firmware update"
+        role: anchor
+        weight: 25
+      - word: "system update"
+        role: anchor
+        weight: 25
+      - word: "backward compatibility"
+        role: anchor
+        weight: 35
+      - word: "nintendo account"
+        role: anchor
+        weight: 25
+
+      # Захист IP, патенти, суди
+      - word: "patent infringement"
+        role: anchor
+        weight: 35
+      - word: "pocketpair"
+        role: anchor
+        weight: 35
+      - word: "palworld"
+        role: anchor
+        weight: 35
+      - word: "lawsuit"
+        role: anchor
+        weight: 30
+      - word: "injunction"
+        role: anchor
+        weight: 30
+      - word: "dmca"
+        role: anchor
+        weight: 30
+      - word: "emulator"
+        role: anchor
+        weight: 25
+      - word: "piracy"
+        role: anchor
+        weight: 25
+
+      # Культура, музей, парки, фільми
+      - word: "nintendo museum"
+        role: anchor
+        weight: 35
+      - word: "super nintendo world"
+        role: anchor
+        weight: 30
+      - word: "universal studios"
+        role: anchor
+        weight: 25
+      - word: "zelda movie"
+        role: anchor
+        weight: 35
+      - word: "mario movie"
+        role: anchor
+        weight: 30
+
   platform:
     enabled: true
     priority: 100
@@ -242,42 +361,35 @@ topics:
         role: must_publish
         weight: 70
         event_tag: "nintendo_live"
-      - word: "switch 2 reveal"
-        role: must_publish
-        weight: 120
-        event_tag: "switch_2_reveal"
-      - word: "switch 2 launch"
-        role: must_publish
-        weight: 120
-        event_tag: "switch_2_launch"
-      - word: "switch 2 release date"
-        role: must_publish
-        weight: 120
-        event_tag: "switch_2_reveal"
-      - word: "switch 2 price"
-        role: must_publish
-        weight: 100
-        event_tag: "switch_2_reveal"
+      - word: "switch 2 update"
+        role: anchor
+        weight: 35
+      - word: "switch 2 pro"
+        role: anchor
+        weight: 35
+      - word: "switch 2 games"
+        role: anchor
+        weight: 35
 
   release:
     enabled: true
-    priority: 80
+    priority: 45
     keywords:
       - word: "announced"
         role: signal
-        weight: 8
+        weight: 4
       - word: "reveal"
         role: signal
-        weight: 8
+        weight: 4
       - word: "new game"
         role: signal
-        weight: 6
+        weight: 4
       - word: "launch"
         role: signal
-        weight: 8
+        weight: 4
       - word: "release date"
         role: signal
-        weight: 10
+        weight: 5
 
   monetization:
     enabled: true

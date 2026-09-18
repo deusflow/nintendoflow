@@ -419,9 +419,13 @@ func buildSelectorPrompt(candidates []candidate) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(`Instructions:
-1. Select the most interesting, fresh, and engaging candidate.
-2. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information (e.g., specific highly anticipated game reveals).
+	b.WriteString(`Editorial Guidelines & Selection Instructions:
+1. NINTENDO-FIRST PRIORITY: The channel is primarily about NINTENDO AS A COMPANY AND ECOSYSTEM, not just an endless feed of routine third-party game release dates.
+   - TOP PRIORITY: Nintendo company moves, official Nintendo Direct announcements, executive statements (Furukawa, Miyamoto, Aonuma, Koizumi), console sales milestones, financial earnings reports, Nintendo Switch Online updates, backward compatibility, firmware/OS updates, Nintendo Museum, legal battles/IP protection (e.g. Palworld/Pocketpair lawsuit, emulator bans), and major first-party franchise announcements (Mario, Zelda, Pokemon, Metroid, Smash).
+   - MEDIUM PRIORITY: Exclusive third-party partnerships, major Switch 2 technical breakthroughs (DLSS, performance reveals).
+   - LOW PRIORITY: Generic multiplatform game release date announcements, minor indie ports, routine game trailers.
+   - If a candidate covering Nintendo corporate, hardware, executive statement, or ecosystem is present alongside routine indie/3rd-party game release dates, ALWAYS prefer the Nintendo corporate/hardware/ecosystem candidate!
+2. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
 3. Return ONLY the number of the best candidate (e.g., 1 or 2).
 4. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`)
 	return b.String()
