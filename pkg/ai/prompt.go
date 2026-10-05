@@ -1,6 +1,7 @@
 package ai
 
 import (
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
@@ -8,6 +9,9 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed default_facts.md
+var defaultFactsContent string
 
 // NewsInput — структура для передачи параметров новости.
 type NewsInput struct {
@@ -25,14 +29,6 @@ type DeviceFact struct {
 	Name        string
 	ReleaseDate time.Time
 	Status      string
-}
-
-var defaultFacts = []DeviceFact{
-	{Name: "Nintendo Switch 2", ReleaseDate: time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC), Status: "вже в продажу"},
-	{Name: "Nintendo Switch 2 Pro Controller", ReleaseDate: time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC), Status: "вже в продажу"},
-	{Name: "Nintendo Switch (оригінальна модель)", ReleaseDate: time.Date(2017, 3, 3, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
-	{Name: "Nintendo Switch OLED", ReleaseDate: time.Date(2021, 10, 8, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
-	{Name: "Nintendo Switch Lite", ReleaseDate: time.Date(2019, 9, 20, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
 }
 
 // MonthsBetween calculates elapsed full calendar months from 'from' to 'to'.
@@ -127,20 +123,21 @@ func LoadWorldFacts(path string, now time.Time) string {
 				return FormatFactsBlock(facts, now)
 			}
 		}
-	}
-	candidates := []string{"facts.md", "../facts.md", "../../facts.md"}
-	for _, c := range candidates {
-		searchedPaths = append(searchedPaths, c)
-		if content, err := os.ReadFile(c); err == nil && len(strings.TrimSpace(string(content))) > 0 {
-			facts := ParseFacts(string(content))
-			if len(facts) > 0 {
-				return FormatFactsBlock(facts, now)
+	} else {
+		candidates := []string{"facts.md", "../facts.md", "../../facts.md"}
+		for _, c := range candidates {
+			searchedPaths = append(searchedPaths, c)
+			if content, err := os.ReadFile(c); err == nil && len(strings.TrimSpace(string(content))) > 0 {
+				facts := ParseFacts(string(content))
+				if len(facts) > 0 {
+					return FormatFactsBlock(facts, now)
+				}
 			}
 		}
 	}
 
 	slog.Warn("facts.md not found, using fallback world facts", "searched_paths", searchedPaths)
-	return FormatFactsBlock(defaultFacts, now)
+	return FormatFactsBlock(ParseFacts(defaultFactsContent), now)
 }
 
 // sanitizeInput removes potential prompt injection attempts from user-supplied data without corrupting legitimate vocabulary.

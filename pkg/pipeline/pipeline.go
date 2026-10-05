@@ -437,7 +437,7 @@ func buildSelectorPrompt(candidates []candidate) string {
    - MEDIUM PRIORITY: Exclusive third-party partnerships, major Switch 2 technical breakthroughs (DLSS, performance reveals).
    - LOW PRIORITY: Generic multiplatform game release date announcements, minor indie ports, routine game trailers.
    - If a candidate covering Nintendo corporate, hardware, executive statement, or ecosystem is present alongside routine indie/3rd-party game release dates, ALWAYS prefer the Nintendo corporate/hardware/ecosystem candidate!
-2. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років (наприклад, чутки чи патенти щодо базових функцій Switch 2 чи Pro Controller, оскільки ці пристрої вже давно вийшли на ринок).
+2. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років та матеріали, які подають як майбутнє або невідоме те, що вже давно вийшло за списком пристроїв.
 3. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
 4. Return ONLY the number of the best candidate (e.g., 1 or 2).
 5. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`, nowStr))

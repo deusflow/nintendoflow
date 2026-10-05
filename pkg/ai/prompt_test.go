@@ -1,6 +1,10 @@
 package ai
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -140,14 +144,32 @@ Invalid line without pipes
 }
 
 func TestLoadWorldFacts_MissingFileLogsWarn(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	origLogger := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(origLogger)
+
 	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
-	// Passing an explicit non-existent path
-	factsBlock := LoadWorldFacts("/tmp/definitely_nonexistent_facts_file.md", now)
+	nonExistentPath := "/tmp/definitely_nonexistent_facts_file.md"
+	factsBlock := LoadWorldFacts(nonExistentPath, now)
+
 	if !strings.Contains(factsBlock, "Nintendo Switch 2") {
 		t.Errorf("expected fallback facts when file is missing, got:\n%s", factsBlock)
 	}
 	if !strings.Contains(factsBlock, "16 місяців") {
 		t.Errorf("expected elapsed months in fallback facts, got:\n%s", factsBlock)
+	}
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "WARN") && !strings.Contains(logOutput, "level=WARN") {
+		t.Errorf("expected WARN level in log output, got:\n%s", logOutput)
+	}
+	if !strings.Contains(logOutput, "facts.md not found, using fallback world facts") {
+		t.Errorf("expected warning message about missing facts.md in log output, got:\n%s", logOutput)
+	}
+	if !strings.Contains(logOutput, nonExistentPath) {
+		t.Errorf("expected searched path %q to appear in log output, got:\n%s", nonExistentPath, logOutput)
 	}
 }
 
@@ -176,6 +198,75 @@ func TestParseJSONPost_MarkdownWrappedWithReason(t *testing.T) {
 	}
 	if post.Reason != "стара новина FCC" {
 		t.Errorf("expected reason %q, got %q", "стара новина FCC", post.Reason)
+	}
+}
+
+func TestEmbeddedDefaultFacts(t *testing.T) {
+	if len(strings.TrimSpace(defaultFactsContent)) == 0 {
+		t.Fatal("expected embedded defaultFactsContent to be non-empty")
+	}
+	facts := ParseFacts(defaultFactsContent)
+	if len(facts) < 3 {
+		t.Fatalf("expected at least 3 parsed facts from defaultFactsContent, got %d", len(facts))
+	}
+	foundSwitch2 := false
+	foundProCtrl := false
+	for _, f := range facts {
+		if strings.Contains(f.Name, "Switch 2") && !strings.Contains(f.Name, "Pro Controller") {
+			foundSwitch2 = true
+		}
+		if strings.Contains(f.Name, "Pro Controller") {
+			foundProCtrl = true
+		}
+	}
+	if !foundSwitch2 {
+		t.Errorf("expected embedded facts to contain Switch 2")
+	}
+	if !foundProCtrl {
+		t.Errorf("expected embedded facts to contain Pro Controller")
+	}
+}
+
+func TestFreshnessCasesSchema(t *testing.T) {
+	candidates := []string{
+		"../../testdata/freshness_cases.json",
+		"testdata/freshness_cases.json",
+	}
+	var content []byte
+	var readErr error
+	for _, c := range candidates {
+		content, readErr = os.ReadFile(c)
+		if readErr == nil {
+			break
+		}
+	}
+	if readErr != nil {
+		t.Fatalf("failed to read freshness_cases.json: %v", readErr)
+	}
+
+	var cases []struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		Title        string `json:"title"`
+		Body         string `json:"body"`
+		Source       string `json:"source"`
+		PublishedAt  string `json:"published_at"`
+		ExpectedSkip bool   `json:"expected_skip"`
+	}
+	if err := json.Unmarshal(content, &cases); err != nil {
+		t.Fatalf("failed to unmarshal freshness_cases.json: %v", err)
+	}
+	if len(cases) < 5 {
+		t.Errorf("expected at least 5 freshness test cases, got %d", len(cases))
+	}
+
+	for i, tc := range cases {
+		if tc.ID == "" || tc.Title == "" || tc.Body == "" || tc.Source == "" {
+			t.Errorf("case %d (%s) missing required fields: %+v", i+1, tc.ID, tc)
+		}
+		if _, err := time.Parse(time.RFC3339, tc.PublishedAt); err != nil {
+			t.Errorf("case %d (%s) has invalid RFC3339 published_at %q: %v", i+1, tc.ID, tc.PublishedAt, err)
+		}
 	}
 }
 
