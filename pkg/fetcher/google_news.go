@@ -182,10 +182,40 @@ func ResolveGoogleNewsURL(ctx context.Context, client *http.Client, rawURL strin
 		return rawURL, fmt.Errorf("read batch response: %w", err)
 	}
 
+	// 1. Structured JSON parsing
+	bodyStr := strings.TrimSpace(string(batchBody))
+	if strings.HasPrefix(bodyStr, ")]}'") {
+		bodyStr = strings.TrimSpace(bodyStr[4:])
+	}
+	var rows []any
+	if err := json.Unmarshal([]byte(bodyStr), &rows); err == nil {
+		for _, r := range rows {
+			row, ok := r.([]any)
+			if !ok || len(row) < 3 {
+				continue
+			}
+			payloadStr, ok := row[2].(string)
+			if !ok {
+				continue
+			}
+			var payload []any
+			if err := json.Unmarshal([]byte(payloadStr), &payload); err == nil && len(payload) >= 2 {
+				if payload[0] == "garturlres" {
+					if decodedURL, ok := payload[1].(string); ok && decodedURL != "" {
+						return decodedURL, nil
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Regex fallback
 	resMatch := garturlresRe.FindSubmatch(batchBody)
 	if len(resMatch) >= 2 {
 		resolved := string(resMatch[1])
 		resolved = strings.ReplaceAll(resolved, `\/`, `/`)
+		resolved = strings.ReplaceAll(resolved, `\u003d`, `=`)
+		resolved = strings.ReplaceAll(resolved, `\u0026`, `&`)
 		return resolved, nil
 	}
 

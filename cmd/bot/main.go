@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"strings"
@@ -12,17 +13,39 @@ import (
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/highlight"
 	"github.com/deuswork/nintendoflow/pkg/pipeline"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	envFile := flag.String("env-file", "", "Path to .env file")
+	dryRun := flag.Bool("dry-run", false, "Run pipeline in dry-run mode without publishing")
+	modeFlag := flag.String("mode", "", "Execution mode: news (default) or highlight")
+	flag.Parse()
+
+	if *envFile != "" {
+		if err := godotenv.Load(*envFile); err != nil {
+			slog.Warn("failed to load custom env file", "path", *envFile, "error", err)
+		} else {
+			slog.Info("loaded env file", "path", *envFile)
+		}
+	}
+
+	if *dryRun {
+		_ = os.Setenv("DRY_RUN", "true")
+	}
+
 	// -- 1. Config ---------------------------------------------------------
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load failed", "error", err)
 		os.Exit(1)
+	}
+
+	if cfg.DryRun {
+		slog.Info("running in dry-run mode (--dry-run flag or DRY_RUN=true)")
 	}
 
 	feeds, err := config.LoadFeeds(cfg.FeedsPath)
@@ -89,9 +112,13 @@ func main() {
 
 	// -- 4.5. Check command-line mode ------------------------------------
 	mode := "news"
-	for _, arg := range os.Args[1:] {
-		if arg == "highlight" || arg == "--mode=highlight" {
-			mode = "highlight"
+	if *modeFlag != "" {
+		mode = *modeFlag
+	} else {
+		for _, arg := range flag.Args() {
+			if arg == "highlight" {
+				mode = "highlight"
+			}
 		}
 	}
 

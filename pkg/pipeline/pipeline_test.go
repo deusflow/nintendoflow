@@ -123,7 +123,7 @@ func TestQuarantineForGoogleNewsWithoutDate(t *testing.T) {
 		RecentTitlesHours:  24,
 	}
 
-	validated, checked, dropped, quarantined := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg)
+	validated, checked, dropped, quarantined, _ := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg, nil)
 
 	if checked != 1 {
 		t.Fatalf("expected 1 checked candidate, got %d", checked)
@@ -171,7 +171,7 @@ func TestTrustedSourceWithoutDatePassesWithFeedDate(t *testing.T) {
 		RecentTitlesHours:  24,
 	}
 
-	validated, checked, _, quarantined := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg)
+	validated, checked, _, quarantined, _ := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg, nil)
 
 	if checked != 1 {
 		t.Fatalf("expected 1 checked candidate, got %d", checked)
@@ -200,7 +200,7 @@ func TestQuarantineThresholdAccumulation(t *testing.T) {
 		candidates = append(candidates, candidate{
 			item: fetcher.Item{
 				Title:          fmt.Sprintf("Untrusted Candidate %d", i),
-				Link:           ts.URL,
+				Link:           fmt.Sprintf("%s/article-%d", ts.URL, i),
 				SourceName:     "Google News - Aggregator",
 				SourceType:     "aggregator",
 				SourcePriority: 70,
@@ -215,7 +215,7 @@ func TestQuarantineThresholdAccumulation(t *testing.T) {
 		RecentTitlesHours:  24,
 	}
 
-	validated, checked, _, quarantined := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg)
+	validated, checked, _, quarantined, _ := validateTopCandidatesFreshness(context.Background(), candidates, 24, cfg, nil)
 	if checked != 6 {
 		t.Fatalf("expected 6 checked, got %d", checked)
 	}
@@ -226,5 +226,101 @@ func TestQuarantineThresholdAccumulation(t *testing.T) {
 		t.Fatalf("expected 6 quarantined, got %d", len(quarantined))
 	}
 }
+
+func TestQuarantineNotCountedTwiceAcrossRuns(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><body>No date</body></html>"))
+	}))
+	defer ts.Close()
+
+	now := time.Now()
+	cfg := &config.Config{
+		TrustedDateSources: []string{"Nintendo Everything"},
+		RecentTitlesHours:  24,
+	}
+
+	// Simulated persistent storage of known URLs in DB
+	knownURLs := make(map[string]struct{})
+
+	// Run 1: 3 untrusted items appear for the first time
+	run1Candidates := []candidate{
+		{item: fetcher.Item{Title: "Candidate 1", Link: ts.URL + "/c1", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c1"},
+		{item: fetcher.Item{Title: "Candidate 2", Link: ts.URL + "/c2", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c2"},
+		{item: fetcher.Item{Title: "Candidate 3", Link: ts.URL + "/c3", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c3"},
+	}
+
+	_, _, _, quarantinedRun1, _ := validateTopCandidatesFreshness(context.Background(), run1Candidates, 24, cfg, nil)
+	if len(quarantinedRun1) != 3 {
+		t.Fatalf("expected 3 quarantined in run 1, got %d", len(quarantinedRun1))
+	}
+
+	// Persist quarantined items to knownURLs (as db.InsertQuarantinedArticle does)
+	for _, q := range quarantinedRun1 {
+		knownURLs[q.urlHash] = struct{}{}
+	}
+
+	// Run 2: Feed returns the same 3 items + 2 new items
+	incomingRun2 := []candidate{
+		{item: fetcher.Item{Title: "Candidate 1", Link: ts.URL + "/c1", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c1"},
+		{item: fetcher.Item{Title: "Candidate 2", Link: ts.URL + "/c2", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c2"},
+		{item: fetcher.Item{Title: "Candidate 3", Link: ts.URL + "/c3", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c3"},
+		{item: fetcher.Item{Title: "Candidate 4", Link: ts.URL + "/c4", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c4"},
+		{item: fetcher.Item{Title: "Candidate 5", Link: ts.URL + "/c5", SourceName: "Google News", PublishedAt: &now}, urlHash: "hash-c5"},
+	}
+
+	// Local filter step skips items already in knownURLs
+	var run2Candidates []candidate
+	for _, c := range incomingRun2 {
+		if _, exists := knownURLs[c.urlHash]; exists {
+			continue // skipped as already known / quarantined in DB
+		}
+		run2Candidates = append(run2Candidates, c)
+	}
+
+	if len(run2Candidates) != 2 {
+		t.Fatalf("expected only 2 new candidates to reach freshness check, got %d", len(run2Candidates))
+	}
+
+	_, _, _, quarantinedRun2, _ := validateTopCandidatesFreshness(context.Background(), run2Candidates, 24, cfg, nil)
+	if len(quarantinedRun2) != 2 {
+		t.Fatalf("expected 2 new quarantined in run 2, got %d", len(quarantinedRun2))
+	}
+
+	// Alert check: 2 < 5 -> alert must NOT be sent in run 2!
+	alertSentRun2 := len(quarantinedRun2) >= 5
+	if alertSentRun2 {
+		t.Fatalf("quarantine alert should NOT be sent when only 2 new items are quarantined")
+	}
+
+	// Persist the 2 new ones
+	for _, q := range quarantinedRun2 {
+		knownURLs[q.urlHash] = struct{}{}
+	}
+
+	// Run 3: 5 completely new items appear
+	var run3Candidates []candidate
+	for i := 6; i <= 10; i++ {
+		hash := fmt.Sprintf("hash-c%d", i)
+		if _, exists := knownURLs[hash]; !exists {
+			run3Candidates = append(run3Candidates, candidate{
+				item:    fetcher.Item{Title: fmt.Sprintf("Candidate %d", i), Link: fmt.Sprintf("%s/c%d", ts.URL, i), SourceName: "Google News", PublishedAt: &now},
+				urlHash: hash,
+			})
+		}
+	}
+
+	_, _, _, quarantinedRun3, _ := validateTopCandidatesFreshness(context.Background(), run3Candidates, 24, cfg, nil)
+	if len(quarantinedRun3) != 5 {
+		t.Fatalf("expected 5 quarantined in run 3, got %d", len(quarantinedRun3))
+	}
+
+	// Alert check: 5 >= 5 -> alert IS sent!
+	alertSentRun3 := len(quarantinedRun3) >= 5
+	if !alertSentRun3 {
+		t.Fatalf("quarantine alert SHOULD be sent when 5 new items are quarantined")
+	}
+}
+
 
 

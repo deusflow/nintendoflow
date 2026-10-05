@@ -18,6 +18,7 @@ type Config struct {
 	TestTelegramToken  string
 	TestChannelID      string
 	TestAdminChatID    string
+	AdminChatID        string
 	GeminiAPIKey       string
 	OpenRouterAPIKey   string // optional
 	GeminiModel        string
@@ -82,6 +83,7 @@ func Load() (*Config, error) {
 		TestTelegramToken:  os.Getenv("TEST_TELEGRAM_TOKEN"),
 		TestChannelID:      os.Getenv("TEST_CHANNEL_ID"),
 		TestAdminChatID:    os.Getenv("TEST_ADMIN_CHAT_ID"),
+		AdminChatID:        getEnvOrDefault("ADMIN_CHAT_ID", os.Getenv("TEST_ADMIN_CHAT_ID")),
 		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
 		OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"), // optional
 		GeminiModel:        getEnvOrDefault("GEMINI_MODEL", "gemini-3.5-flash"),
@@ -100,19 +102,21 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.TestModerationMode {
-		if cfg.TestTelegramToken == "" {
-			return nil, fmt.Errorf("TEST_TELEGRAM_TOKEN is required when TEST_MODERATION_MODE=true")
-		}
-		if cfg.TestChannelID == "" {
-			return nil, fmt.Errorf("TEST_CHANNEL_ID is required when TEST_MODERATION_MODE=true")
-		}
-	} else {
-		if cfg.TelegramBotToken == "" {
-			return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
-		}
-		if cfg.TelegramChannelID == "" {
-			return nil, fmt.Errorf("TELEGRAM_CHANNEL_ID is required")
+	if !cfg.DryRun {
+		if cfg.TestModerationMode {
+			if cfg.TestTelegramToken == "" {
+				return nil, fmt.Errorf("TEST_TELEGRAM_TOKEN is required when TEST_MODERATION_MODE=true")
+			}
+			if cfg.TestChannelID == "" {
+				return nil, fmt.Errorf("TEST_CHANNEL_ID is required when TEST_MODERATION_MODE=true")
+			}
+		} else {
+			if cfg.TelegramBotToken == "" {
+				return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
+			}
+			if cfg.TelegramChannelID == "" {
+				return nil, fmt.Errorf("TELEGRAM_CHANNEL_ID is required")
+			}
 		}
 	}
 

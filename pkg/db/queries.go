@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	StatusPending   = "pending"
-	StatusPublished = "published"
-	StatusRejected  = "rejected"
-	StatusNeedsEdit = "needs_edit"
+	StatusPending     = "pending"
+	StatusPublished   = "published"
+	StatusRejected    = "rejected"
+	StatusNeedsEdit   = "needs_edit"
+	StatusQuarantined = "quarantined"
 )
 
 type Article struct {
@@ -125,12 +126,21 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 
 func UpdateArticleStatus(ctx context.Context, db *sql.DB, id int, status string) error {
 	switch status {
-	case StatusPending, StatusPublished, StatusRejected, StatusNeedsEdit:
+	case StatusPending, StatusPublished, StatusRejected, StatusNeedsEdit, StatusQuarantined:
 	default:
 		return fmt.Errorf("invalid article status: %s", status)
 	}
 	_, err := db.ExecContext(ctx, `UPDATE articles SET status=$1 WHERE id=$2`, status, id)
 	return err
+}
+
+// InsertQuarantinedArticle stores an article placed into quarantine due to missing or unverifiable date.
+func InsertQuarantinedArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
+	if db == nil {
+		return 0, nil
+	}
+	a.Status = StatusQuarantined
+	return InsertArticle(ctx, db, a)
 }
 
 func UpsertModerationEditSession(ctx context.Context, db *sql.DB, session ModerationEditSession) error {

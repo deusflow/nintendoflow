@@ -185,7 +185,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		maxCandidatesToCheck = len(candidates)
 	}
 	candidatesPool := candidates[:maxCandidatesToCheck]
-	checkedCandidates, dateChecked, dateDropped, quarantined := validateTopCandidatesFreshness(ctx, candidatesPool, cfg.RecentTitlesHours, cfg)
+	checkedCandidates, dateChecked, dateDropped, quarantined, quarantineReasons := validateTopCandidatesFreshness(ctx, candidatesPool, cfg.RecentTitlesHours, cfg, database)
 	sortCandidates(checkedCandidates)
 	quarantineCount := len(quarantined)
 
@@ -208,6 +208,21 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	}
 
 	if len(checkedCandidates) < 1 {
+		if cfg.DryRun {
+			fmt.Println("\n==================== DRY RUN REPORT ====================")
+			fmt.Printf("1. QUARANTINED ARTICLES (%d total):\n", len(quarantined))
+			if len(quarantined) == 0 {
+				fmt.Println("   (none)")
+			} else {
+				for i, q := range quarantined {
+					reason := quarantineReasons[q.item.Link]
+					fmt.Printf("   [%d] %s\n       Source: %s | URL: %s\n       Reason: %s\n", i+1, q.item.Title, q.item.SourceName, q.item.Link, reason)
+				}
+			}
+			fmt.Println("\n2. NO VALID CANDIDATES REMAINED AFTER FRESHNESS/QUARANTINE CHECKS.")
+			fmt.Println("========================================================")
+			fmt.Println()
+		}
 		slog.Info("no candidates this run")
 		logFinalStats(fetchedCount, 0, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
@@ -357,6 +372,41 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	}
 
 	if cfg.DryRun {
+		fmt.Println("\n==================== DRY RUN REPORT ====================")
+		fmt.Printf("1. QUARANTINED ARTICLES (%d total):\n", len(quarantined))
+		if len(quarantined) == 0 {
+			fmt.Println("   (none)")
+		} else {
+			for i, q := range quarantined {
+				reason := quarantineReasons[q.item.Link]
+				if reason == "" {
+					reason = "source date missing or unreachable"
+				}
+				fmt.Printf("   [%d] %s\n       Source: %s | URL: %s\n       Reason: %s\n", i+1, q.item.Title, q.item.SourceName, q.item.Link, reason)
+			}
+		}
+
+		fmt.Printf("\n2. CANDIDATES CONSIDERED BY SELECTOR (%d total):\n", len(topCandidates))
+		for i, tc := range topCandidates {
+			pubStr := "unknown"
+			if tc.item.PublishedAt != nil {
+				pubStr = tc.item.PublishedAt.UTC().Format(time.RFC3339)
+			}
+			fmt.Printf("   [%d] %s\n       Source: %s | Score: %d | Published: %s\n", i+1, tc.item.Title, tc.item.SourceName, tc.score, pubStr)
+		}
+
+		fmt.Printf("\n3. SELECTED CANDIDATE (Index %d):\n", selectedIdx+1)
+		fmt.Printf("   Title:  %s\n", article.TitleRaw)
+		fmt.Printf("   Source: %s\n", article.SourceName)
+		fmt.Printf("   Type:   %s\n", article.ArticleType)
+
+		fmt.Println("\n4. WOULD PUBLISH TELEGRAM POST:")
+		fmt.Println("--------------------------------------------------------")
+		fmt.Println(cleanBody)
+		fmt.Println("--------------------------------------------------------")
+		fmt.Println("========================================================")
+		fmt.Println()
+
 		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
@@ -635,9 +685,10 @@ func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
 	return hypeCount
 }
 
-func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candidate, defaultHours int, cfg *config.Config) ([]candidate, int, int, []candidate) {
+func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candidate, defaultHours int, cfg *config.Config, database *sql.DB) ([]candidate, int, int, []candidate, map[string]string) {
 	validated := make([]candidate, 0, len(topCandidates))
 	quarantined := make([]candidate, 0)
+	quarantineReasons := make(map[string]string)
 	checked := 0
 	dropped := 0
 
@@ -661,12 +712,31 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 				continue
 			}
 
+			reason := fmt.Sprintf("fetch error: %v", err)
 			slog.Warn("candidate quarantined: source-date check failed",
 				"title", c.item.Title,
 				"source", c.item.SourceName,
 				"url", c.item.Link,
 				"error", err,
 			)
+			if database != nil && (cfg == nil || !cfg.DryRun) {
+				quarantinedArticle := db.Article{
+					SourceURL:   c.item.Link,
+					URLHash:     c.urlHash,
+					TitleHash:   c.titleHash,
+					ContentHash: c.item.ContentHash,
+					TitleRaw:    c.item.Title,
+					SourceName:  c.item.SourceName,
+					SourceType:  c.item.SourceType,
+					Score:       c.score,
+					Status:      db.StatusQuarantined,
+					PublishedAt: c.item.PublishedAt,
+				}
+				if _, err := db.InsertQuarantinedArticle(ctx, database, quarantinedArticle); err != nil {
+					slog.Warn("failed to record quarantined article in database", "url", c.item.Link, "error", err)
+				}
+			}
+			quarantineReasons[c.item.Link] = reason
 			quarantined = append(quarantined, c)
 			continue
 		}
@@ -682,11 +752,30 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 				continue
 			}
 
+			reason := "missing publication date on page"
 			slog.Warn("candidate quarantined: source-date missing",
 				"title", c.item.Title,
 				"source", c.item.SourceName,
 				"url", c.item.Link,
 			)
+			if database != nil && (cfg == nil || !cfg.DryRun) {
+				quarantinedArticle := db.Article{
+					SourceURL:   c.item.Link,
+					URLHash:     c.urlHash,
+					TitleHash:   c.titleHash,
+					ContentHash: c.item.ContentHash,
+					TitleRaw:    c.item.Title,
+					SourceName:  c.item.SourceName,
+					SourceType:  c.item.SourceType,
+					Score:       c.score,
+					Status:      db.StatusQuarantined,
+					PublishedAt: c.item.PublishedAt,
+				}
+				if _, err := db.InsertQuarantinedArticle(ctx, database, quarantinedArticle); err != nil {
+					slog.Warn("failed to record quarantined article in database", "url", c.item.Link, "error", err)
+				}
+			}
+			quarantineReasons[c.item.Link] = reason
 			quarantined = append(quarantined, c)
 			continue
 		}
@@ -713,7 +802,7 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 		validated = append(validated, c)
 	}
 
-	return validated, checked, dropped, quarantined
+	return validated, checked, dropped, quarantined, quarantineReasons
 }
 
 func isTrustedDateSource(c candidate, cfg *config.Config) bool {
@@ -772,15 +861,12 @@ func handleQuarantineAlert(cfg *config.Config, quarantined []candidate) {
 		return
 	}
 
-	targetChatID := cfg.TestAdminChatID
+	targetChatID := cfg.AdminChatID
 	if strings.TrimSpace(targetChatID) == "" {
-		targetChatID = cfg.TestChannelID
+		targetChatID = cfg.TestAdminChatID
 	}
 	if strings.TrimSpace(targetChatID) == "" {
-		targetChatID = cfg.TelegramChannelID
-	}
-	if strings.TrimSpace(targetChatID) == "" {
-		slog.Warn("cannot send quarantine alert: no target chat id configured")
+		slog.Warn("cannot send quarantine alert: ADMIN_CHAT_ID is not configured (will not send to public channel)")
 		return
 	}
 

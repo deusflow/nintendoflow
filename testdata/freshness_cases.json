@@ -7,7 +7,8 @@
     "source": "Google News (TOY PEOPLE)",
     "published_at": "2026-10-03T07:30:06Z",
     "expected_skip": true,
-    "expected_type": ""
+    "expected_type": "",
+    "description": "Составлен по заголовку статьи TOY PEOPLE и материалам FCC-заявки BEE-008 (оригинал статьи на toy-people.com на традиционном китайском за Cloudflare 403)"
   },
   {
     "id": "stale_magnetic_joycon_patent",
