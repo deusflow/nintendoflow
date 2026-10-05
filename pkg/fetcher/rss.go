@@ -44,6 +44,7 @@ type Item struct {
 	SourceType        string
 	RequireAnchor     bool
 	ContentHash       string
+	TrustFeedDate     bool
 }
 
 // FetchAll fetches all active feeds and returns collected items.
@@ -176,19 +177,63 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 			SourceType:     f.Type,
 			RequireAnchor:  f.RequireAnchor,
 			ContentHash:    hash,
+			TrustFeedDate:  f.TrustFeedDate,
 		})
 	}
 	return items, nil
 }
 
-// ResolveRedirect follows a redirect and returns the final URL.
+// ResolveRedirect follows a redirect (including Google News decoding) and returns the final URL.
 func ResolveRedirect(rawURL string) (string, error) {
-	resp, err := redirectHTTPClient.Head(rawURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return ResolveRedirectWithContext(ctx, rawURL)
+}
+
+// ResolveRedirectWithContext follows redirects and unwraps Google News URLs.
+func ResolveRedirectWithContext(ctx context.Context, rawURL string) (string, error) {
+	if IsGoogleNewsURL(rawURL) {
+		resolved, err := ResolveGoogleNewsURL(ctx, redirectHTTPClient, rawURL)
+		if err == nil && resolved != "" && !IsGoogleNewsURL(resolved) {
+			return resolved, nil
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return rawURL, nil
 	}
+	cfg := NewScraperConfig(10 * time.Second)
+	req = PrepareScraperRequest(req, cfg)
+
+	resp, err := redirectHTTPClient.Do(req)
+	if err != nil {
+		headReq, errHead := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
+		if errHead == nil {
+			if headResp, errDo := redirectHTTPClient.Do(headReq); errDo == nil {
+				_ = headResp.Body.Close()
+				if headResp.Request != nil && headResp.Request.URL != nil {
+					return headResp.Request.URL.String(), nil
+				}
+			}
+		}
+		return rawURL, nil
+	}
 	defer func() { _ = resp.Body.Close() }()
-	return resp.Request.URL.String(), nil
+
+	finalURL := rawURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+
+	if IsGoogleNewsURL(finalURL) {
+		resolved, err := ResolveGoogleNewsURL(ctx, redirectHTTPClient, finalURL)
+		if err == nil && resolved != "" && !IsGoogleNewsURL(resolved) {
+			return resolved, nil
+		}
+	}
+
+	return finalURL, nil
 }
 
 func hashContent(s string) string {

@@ -30,6 +30,7 @@ type Config struct {
 	ITADAPIKey            string
 	DiscountMinCut        int
 	DiscountMinMetacritic int
+	TrustedDateSources    []string
 }
 
 type Feed struct {
@@ -41,6 +42,7 @@ type Feed struct {
 	Type                 string `yaml:"type"`
 	RequireAnchor        bool   `yaml:"require_anchor"`
 	NeedsRedirectResolve bool   `yaml:"needs_redirect_resolve"`
+	TrustFeedDate        bool   `yaml:"trust_feed_date"`
 	TimeoutSeconds       int    `yaml:"timeout_seconds"`
 	// FetchMode controls the fetcher backend.
 	// Values: "" / "rss" (default RSS parser) | "reddit_json" (Reddit JSON API).
@@ -92,6 +94,7 @@ func Load() (*Config, error) {
 		ITADAPIKey:            os.Getenv("ITAD_API_KEY"),
 		DiscountMinCut:        getEnvInt("DISCOUNT_MIN_CUT", 30),
 		DiscountMinMetacritic: getEnvInt("DISCOUNT_MIN_METACRITIC", 70),
+		TrustedDateSources:    loadTrustedDateSources(),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -194,3 +197,28 @@ func getEnvInt(key string, def int) int {
 	}
 	return n
 }
+
+func loadTrustedDateSources() []string {
+	trustedRaw := os.Getenv("TRUSTED_DATE_SOURCES")
+	if strings.TrimSpace(trustedRaw) != "" {
+		var sources []string
+		for _, s := range strings.Split(trustedRaw, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				sources = append(sources, s)
+			}
+		}
+		if len(sources) > 0 {
+			return sources
+		}
+	}
+	return []string{
+		"Nintendo Everything",
+		"Nintendo Life",
+		"Nintendo JP Topics",
+		"Nintendo Official",
+		"Nintendo of America",
+		"Nintendo Co., Ltd.",
+	}
+}
+

@@ -180,28 +180,39 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 
 	sortCandidates(candidates)
 
-	topN := 5
-	if len(candidates) < topN {
-		topN = len(candidates)
+	maxCandidatesToCheck := 10
+	if len(candidates) < maxCandidatesToCheck {
+		maxCandidatesToCheck = len(candidates)
 	}
-	topCandidates := candidates[:topN]
-	checkedTop, dateChecked, dateDropped, dateUnknown := validateTopCandidatesFreshness(ctx, topCandidates, cfg.RecentTitlesHours)
-	sortCandidates(checkedTop)
+	candidatesPool := candidates[:maxCandidatesToCheck]
+	checkedCandidates, dateChecked, dateDropped, quarantined := validateTopCandidatesFreshness(ctx, candidatesPool, cfg.RecentTitlesHours, cfg)
+	sortCandidates(checkedCandidates)
+	quarantineCount := len(quarantined)
+
 	slog.Info("source-date freshness check complete",
 		"checked", dateChecked,
 		"dropped_stale", dateDropped,
-		"unknown_source_date", dateUnknown,
-		"remaining", len(checkedTop),
+		"quarantined", quarantineCount,
+		"remaining", len(checkedCandidates),
 	)
 	logStage("source_date_check", stageStart, runStart)
 	stageStart = time.Now()
 
-	if len(checkedTop) < 1 {
+	if quarantineCount >= 5 {
+		handleQuarantineAlert(cfg, quarantined)
+	}
+
+	topN := 5
+	if len(checkedCandidates) > topN {
+		checkedCandidates = checkedCandidates[:topN]
+	}
+
+	if len(checkedCandidates) < 1 {
 		slog.Info("no candidates this run")
 		logFinalStats(fetchedCount, 0, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
-	topCandidates = checkedTop
+	topCandidates := checkedCandidates
 
 	selectionPrompt := buildSelectorPrompt(topCandidates)
 
@@ -624,37 +635,59 @@ func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
 	return hypeCount
 }
 
-func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candidate, defaultHours int) ([]candidate, int, int, int) {
+func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candidate, defaultHours int, cfg *config.Config) ([]candidate, int, int, []candidate) {
 	validated := make([]candidate, 0, len(topCandidates))
+	quarantined := make([]candidate, 0)
 	checked := 0
 	dropped := 0
-	unknown := 0
 
 	for _, c := range topCandidates {
 		checked++
 		dateCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		sourcePublishedAt, err := fetcher.FetchSourcePublishedAt(dateCtx, c.item.Link)
 		cancel()
+
+		isTrusted := isTrustedDateSource(c, cfg)
+
 		if err != nil {
-			unknown++
-			slog.Warn("source-date check failed; keeping candidate with feed date",
+			if isTrusted {
+				slog.Info("source-date check failed for trusted source; keeping candidate with feed date",
+					"title", c.item.Title,
+					"source", c.item.SourceName,
+					"url", c.item.Link,
+					"error", err,
+				)
+				validated = append(validated, c)
+				continue
+			}
+
+			slog.Warn("candidate quarantined: source-date check failed",
 				"title", c.item.Title,
 				"source", c.item.SourceName,
 				"url", c.item.Link,
 				"error", err,
 			)
-			validated = append(validated, c)
+			quarantined = append(quarantined, c)
 			continue
 		}
 
 		if sourcePublishedAt == nil {
-			unknown++
-			slog.Debug("source-date missing; keeping candidate with feed date",
+			if isTrusted {
+				slog.Info("source-date missing for trusted source; keeping candidate with feed date",
+					"title", c.item.Title,
+					"source", c.item.SourceName,
+					"url", c.item.Link,
+				)
+				validated = append(validated, c)
+				continue
+			}
+
+			slog.Warn("candidate quarantined: source-date missing",
 				"title", c.item.Title,
 				"source", c.item.SourceName,
 				"url", c.item.Link,
 			)
-			validated = append(validated, c)
+			quarantined = append(quarantined, c)
 			continue
 		}
 
@@ -680,7 +713,82 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 		validated = append(validated, c)
 	}
 
-	return validated, checked, dropped, unknown
+	return validated, checked, dropped, quarantined
+}
+
+func isTrustedDateSource(c candidate, cfg *config.Config) bool {
+	if c.item.TrustFeedDate {
+		return true
+	}
+	if cfg == nil || len(cfg.TrustedDateSources) == 0 {
+		return false
+	}
+	srcName := strings.ToLower(strings.TrimSpace(c.item.SourceName))
+	for _, t := range cfg.TrustedDateSources {
+		tClean := strings.ToLower(strings.TrimSpace(t))
+		if tClean != "" && strings.Contains(srcName, tClean) {
+			return true
+		}
+	}
+	return false
+}
+
+func handleQuarantineAlert(cfg *config.Config, quarantined []candidate) {
+	quarantineCount := len(quarantined)
+	sourceCounts := make(map[string]int)
+	for _, q := range quarantined {
+		sourceCounts[q.item.SourceName]++
+	}
+
+	slog.Warn("quarantine threshold reached",
+		"quarantined_count", quarantineCount,
+		"sources", sourceCounts,
+	)
+
+	if cfg == nil {
+		return
+	}
+
+	if cfg.DryRun {
+		slog.Info("DRY_RUN - would send quarantine alert to telegram",
+			"quarantined_count", quarantineCount,
+			"sources", sourceCounts,
+		)
+		return
+	}
+
+	botToken := cfg.TestTelegramToken
+	if botToken == "" {
+		botToken = cfg.TelegramBotToken
+	}
+	if botToken == "" {
+		slog.Warn("cannot send quarantine alert: no telegram bot token configured")
+		return
+	}
+
+	bot, err := tgbotapi.NewBotAPI(botToken)
+	if err != nil {
+		slog.Error("telegram bot init failed for quarantine alert", "error", err)
+		return
+	}
+
+	targetChatID := cfg.TestAdminChatID
+	if strings.TrimSpace(targetChatID) == "" {
+		targetChatID = cfg.TestChannelID
+	}
+	if strings.TrimSpace(targetChatID) == "" {
+		targetChatID = cfg.TelegramChannelID
+	}
+	if strings.TrimSpace(targetChatID) == "" {
+		slog.Warn("cannot send quarantine alert: no target chat id configured")
+		return
+	}
+
+	if err := telegram.SendQuarantineAlert(bot, targetChatID, quarantineCount, sourceCounts); err != nil {
+		slog.Error("quarantine alert: telegram send failed", "error", err, "target_chat_id", targetChatID)
+	} else {
+		slog.Info("quarantine alert sent to telegram", "target_chat_id", targetChatID, "count", quarantineCount)
+	}
 }
 
 func freshnessHoursForSourceType(sourceType string, fallback int) int {

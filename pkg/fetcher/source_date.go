@@ -7,18 +7,32 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
-var jsonLDDateFieldRe = regexp.MustCompile(`"(?:datePublished|dateCreated|uploadDate|dateModified)"\s*:\s*"([^"]+)"`)
+var (
+	jsonLDDateFieldRe = regexp.MustCompile(`"(?:datePublished|dateCreated|uploadDate|dateModified)"\s*:\s*"([^"]+)"`)
+	asianDateRe       = regexp.MustCompile(`(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?`)
+)
 
 // FetchSourcePublishedAt loads an article page and tries to extract its source
 // publication date from common HTML meta fields, JSON-LD and <time> tags.
+// If the given sourceURL is a Google News URL, it resolves it to the destination
+// publisher site first.
 func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	targetURL := sourceURL
+	if IsGoogleNewsURL(targetURL) {
+		resolved, err := ResolveGoogleNewsURL(ctx, redirectHTTPClient, targetURL)
+		if err == nil && resolved != "" && !IsGoogleNewsURL(resolved) {
+			targetURL = resolved
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -56,6 +70,14 @@ func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, 
 		`meta[name="pubdate"]`,
 		`time[itemprop="datePublished"]`,
 		`time.published`,
+		`time[datetime]`,
+		`time`,
+		`span.date`,
+		`span.post-date`,
+		`span.entry-date`,
+		`div.date`,
+		`div.post-date`,
+		`.article-date`,
 	}
 	if t := firstParsedTime(doc, publicationSelectors, "content", "datetime"); t != nil {
 		return t, nil
@@ -69,7 +91,6 @@ func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, 
 		`meta[property="article:modified_time"]`,
 		`meta[property="og:updated_time"]`,
 		`meta[itemprop="dateModified"]`,
-		`time[datetime]`,
 	}
 	if t := firstParsedTime(doc, fallbackSelectors, "content", "datetime"); t != nil {
 		return t, nil
@@ -80,18 +101,26 @@ func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, 
 
 func firstParsedTime(doc *goquery.Document, selectors []string, attrs ...string) *time.Time {
 	for _, selector := range selectors {
-		sel := doc.Find(selector).First()
-		for _, attr := range attrs {
-			if raw, ok := sel.Attr(attr); ok {
-				if t, ok := parseFlexibleTime(raw); ok {
-					return &t
+		var found *time.Time
+		doc.Find(selector).EachWithBreak(func(i int, sel *goquery.Selection) bool {
+			for _, attr := range attrs {
+				if raw, ok := sel.Attr(attr); ok {
+					if t, ok := parseFlexibleTime(raw); ok {
+						found = &t
+						return false
+					}
 				}
 			}
-		}
-		if raw := strings.TrimSpace(sel.Text()); raw != "" {
-			if t, ok := parseFlexibleTime(raw); ok {
-				return &t
+			if raw := strings.TrimSpace(sel.Text()); raw != "" {
+				if t, ok := parseFlexibleTime(raw); ok {
+					found = &t
+					return false
+				}
 			}
+			return true
+		})
+		if found != nil {
+			return found
 		}
 	}
 	return nil
@@ -129,6 +158,12 @@ func parseFlexibleTime(raw string) (time.Time, bool) {
 		time.RFC822Z,
 		time.RFC850,
 		"Mon, 02 Jan 2006 15:04:05 MST",
+		"2006年01月02日",
+		"2006年1月2日",
+		"2006年01月02日 15:04:05",
+		"2006年01月02日 15:04",
+		"2006年1月2日 15:04:05",
+		"2006年1月2日 15:04",
 	}
 
 	for _, layout := range layouts {
@@ -136,6 +171,24 @@ func parseFlexibleTime(raw string) (time.Time, bool) {
 		if err == nil {
 			t = t.UTC()
 			return t, true
+		}
+	}
+
+	// Try extracting Asian date pattern: 2026年10月03日
+	if m := asianDateRe.FindStringSubmatch(v); len(m) >= 4 {
+		year, errY := strconv.Atoi(m[1])
+		month, errM := strconv.Atoi(m[2])
+		day, errD := strconv.Atoi(m[3])
+		if errY == nil && errM == nil && errD == nil && month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+			hour, min, sec := 0, 0, 0
+			if len(m) >= 6 && m[4] != "" && m[5] != "" {
+				hour, _ = strconv.Atoi(m[4])
+				min, _ = strconv.Atoi(m[5])
+				if len(m) >= 7 && m[6] != "" {
+					sec, _ = strconv.Atoi(m[6])
+				}
+			}
+			return time.Date(year, time.Month(month), day, hour, min, sec, 0, time.UTC), true
 		}
 	}
 

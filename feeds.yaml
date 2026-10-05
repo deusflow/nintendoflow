@@ -41,6 +41,7 @@
   type: media
   require_anchor: false
   needs_redirect_resolve: false
+  trust_feed_date: true
 
 - url: "https://gonintendo.com/feeds/news.xml"
   name: "GoNintendo"
@@ -59,6 +60,7 @@
   type: media
   require_anchor: false
   needs_redirect_resolve: false
+  trust_feed_date: true
 
 # ============================================================
 # МЕДІА — загальноігрові
@@ -190,6 +192,7 @@
   type: media
   require_anchor: false
   needs_redirect_resolve: false
+  trust_feed_date: true
 
 - url: "https://news.google.com/rss/search?q=site:famitsu.com+Nintendo&hl=ja&gl=JP&ceid=JP:ja"
   name: "Famitsu"
