@@ -1,0 +1,1 @@
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS quarantine_attempts INT DEFAULT 0;

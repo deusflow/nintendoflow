@@ -13,37 +13,39 @@ import (
 )
 
 const (
-	StatusPending     = "pending"
-	StatusPublished   = "published"
-	StatusRejected    = "rejected"
-	StatusNeedsEdit   = "needs_edit"
-	StatusQuarantined = "quarantined"
+	StatusPending         = "pending"
+	StatusPublished       = "published"
+	StatusRejected        = "rejected"
+	StatusNeedsEdit       = "needs_edit"
+	StatusQuarantined     = "quarantined"
+	StatusQuarantineRetry = "quarantine_retry"
 )
 
 type Article struct {
-	ID          int
-	SourceURL   string
-	URLHash     string
-	TitleHash   string
-	ContentHash string
-	TitleRaw    string
-	TitleUA     string
-	BodyUA      string
-	BodyThreads string
-	VideoURL    string
-	ImageURL    string
-	SourceName  string
-	SourceType  string
-	ArticleType string
-	Score         int
-	PostedTG      bool
-	PostedThreads bool
-	TgMessageID   int
-	AIProvider    string
-	Status        string
-	EventTag      string
-	PublishedAt   *time.Time
-	CreatedAt     time.Time
+	ID                 int
+	SourceURL          string
+	URLHash            string
+	TitleHash          string
+	ContentHash        string
+	TitleRaw           string
+	TitleUA            string
+	BodyUA             string
+	BodyThreads        string
+	VideoURL           string
+	ImageURL           string
+	SourceName         string
+	SourceType         string
+	ArticleType        string
+	Score              int
+	PostedTG           bool
+	PostedThreads      bool
+	TgMessageID        int
+	AIProvider         string
+	Status             string
+	EventTag           string
+	PublishedAt        *time.Time
+	QuarantineAttempts int
+	CreatedAt          time.Time
 }
 
 type ModerationEditSession struct {
@@ -126,11 +128,59 @@ func GetArticleByID(ctx context.Context, db *sql.DB, id int) (Article, error) {
 
 func UpdateArticleStatus(ctx context.Context, db *sql.DB, id int, status string) error {
 	switch status {
-	case StatusPending, StatusPublished, StatusRejected, StatusNeedsEdit, StatusQuarantined:
+	case StatusPending, StatusPublished, StatusRejected, StatusNeedsEdit, StatusQuarantined, StatusQuarantineRetry:
 	default:
 		return fmt.Errorf("invalid article status: %s", status)
 	}
 	_, err := db.ExecContext(ctx, `UPDATE articles SET status=$1 WHERE id=$2`, status, id)
+	return err
+}
+
+// GetQuarantineAttempts returns the current quarantine attempts and status for a source URL.
+func GetQuarantineAttempts(ctx context.Context, db *sql.DB, sourceURL string) (int, string, error) {
+	if db == nil {
+		return 0, "", nil
+	}
+	var attempts int
+	var status string
+	err := db.QueryRowContext(ctx, `
+		SELECT COALESCE(quarantine_attempts, 0), COALESCE(status, '')
+		FROM articles
+		WHERE source_url = $1`, sourceURL).Scan(&attempts, &status)
+	if err == sql.ErrNoRows {
+		return 0, "", nil
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return attempts, status, nil
+}
+
+// RecordQuarantineAttempt saves or updates a quarantined article and its retry attempts.
+// If permanent is true, the status is set to StatusQuarantined.
+// If permanent is false, the status is set to StatusQuarantineRetry so it can be retried in subsequent runs.
+func RecordQuarantineAttempt(ctx context.Context, db *sql.DB, a Article, attempts int, permanent bool) error {
+	if db == nil {
+		return nil
+	}
+	status := StatusQuarantineRetry
+	if permanent {
+		status = StatusQuarantined
+	}
+	a.Status = status
+	a.QuarantineAttempts = attempts
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO articles
+			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, score, status, published_at, quarantine_attempts)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (source_url) DO UPDATE
+		SET quarantine_attempts = EXCLUDED.quarantine_attempts,
+			status = EXCLUDED.status`,
+		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw,
+		nullStr(a.VideoURL), nullStr(a.ImageURL), a.SourceName, a.SourceType,
+		a.Score, status, a.PublishedAt, attempts,
+	)
 	return err
 }
 
@@ -140,7 +190,9 @@ func InsertQuarantinedArticle(ctx context.Context, db *sql.DB, a Article) (int, 
 		return 0, nil
 	}
 	a.Status = StatusQuarantined
-	return InsertArticle(ctx, db, a)
+	a.QuarantineAttempts = 1
+	err := RecordQuarantineAttempt(ctx, db, a, 1, true)
+	return a.ID, err
 }
 
 func UpsertModerationEditSession(ctx context.Context, db *sql.DB, session ModerationEditSession) error {
