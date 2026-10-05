@@ -265,14 +265,19 @@ func FetchRecentTitleHashes(ctx context.Context, db *sql.DB, hours int) (map[str
 	return result, nil
 }
 
-// FetchRecentDedupTexts returns combined title/body texts for near-duplicate checks.
+// FetchRecentDedupTexts returns raw English titles for near-duplicate checks.
 // Only pending/published rows are considered to avoid using rejected noise.
 func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string, error) {
+	if db == nil {
+		return nil, nil
+	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT title_raw, COALESCE(body_ua, '')
+		SELECT title_raw
 		FROM articles
 		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
 		  AND status IN ($2, $3)
+		  AND title_raw IS NOT NULL
+		  AND title_raw <> ''
 		ORDER BY created_at DESC
 		LIMIT 500`, hours, StatusPending, StatusPublished)
 	if err != nil {
@@ -282,11 +287,11 @@ func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string
 
 	result := make([]string, 0, 128)
 	for rows.Next() {
-		var titleRaw, bodyUA string
-		if err := rows.Scan(&titleRaw, &bodyUA); err != nil {
+		var titleRaw string
+		if err := rows.Scan(&titleRaw); err != nil {
 			return nil, err
 		}
-		result = append(result, titleRaw+"\n"+bodyUA)
+		result = append(result, titleRaw)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

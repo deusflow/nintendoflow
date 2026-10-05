@@ -47,3 +47,33 @@ func TestStripForbiddenIntro(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, got)
 	}
 }
+
+func TestPiracyLawsuitDuplicateTitlesWithoutLLM(t *testing.T) {
+	// Real headlines from lawsuit over piracy ($ vs £):
+	titleUSD := "Nintendo Wins $4.5 Million Piracy Lawsuit Against SwitchPirates Moderator"
+	titleGBP := "Nintendo Wins £3.4 Million Piracy Lawsuit Against SwitchPirates Moderator"
+
+	// 1. SemanticSignature check: both titles must have the identical semantic signature
+	sigUSD := SemanticSignature(titleUSD)
+	sigGBP := SemanticSignature(titleGBP)
+	if sigUSD != sigGBP {
+		t.Fatalf("expected identical SemanticSignature for lawsuit titles, got USD: %s vs GBP: %s", sigUSD, sigGBP)
+	}
+
+	// 2. HashTitle check: hashes must match
+	if HashTitle(titleUSD) != HashTitle(titleGBP) {
+		t.Fatalf("expected identical HashTitle for lawsuit titles")
+	}
+
+	// 3. Jaccard similarity / near-duplicate check on title alone
+	textUSD := BuildSimilarityText(titleUSD, "")
+	textGBP := BuildSimilarityText(titleGBP, "")
+	sim := Similarity(textUSD, textGBP)
+	if sim < 0.64 {
+		t.Fatalf("expected similarity >= 0.64, got %f", sim)
+	}
+	if !IsNearDuplicate(textGBP, []string{textUSD}, 0.64) {
+		t.Fatalf("expected titleGBP to be detected as near-duplicate of titleUSD without LLM")
+	}
+}
+

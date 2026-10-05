@@ -15,6 +15,7 @@ var stopwords = map[string]struct{}{
 	"is": {}, "are": {}, "was": {}, "were": {}, "be": {}, "been": {}, "being": {},
 	"to": {}, "of": {}, "in": {}, "on": {}, "for": {}, "with": {}, "by": {}, "from": {}, "at": {},
 	"as": {}, "into": {}, "about": {}, "after": {}, "before": {}, "over": {}, "under": {}, "between": {},
+	"against": {}, "than": {}, "then": {},
 	"this": {}, "that": {}, "these": {}, "those": {}, "it": {}, "its": {}, "their": {},
 	"now": {}, "live": {}, "new": {}, "latest": {}, "update": {}, "updates": {},
 	"report": {}, "reports": {}, "rumor": {}, "rumors": {}, "details": {},
@@ -27,8 +28,8 @@ var fillerPhrases = []string{
 	"here is what changed",
 }
 
-// SemanticSignature generates a short signature of keywords from a title.
-// Example: "The Legend of Zelda: Echoes of Wisdom Update" -> "[echoes, legend, update, wisdom, zelda]"
+// SemanticSignature generates a signature of significant keywords from a title.
+// It prioritizes the longest and rarest substantive tokens instead of slicing alphabetically.
 func SemanticSignature(title string) string {
 	tokens := normalizeTokens(title)
 	if len(tokens) == 0 {
@@ -41,32 +42,46 @@ func SemanticSignature(title string) string {
 		"play": true, "video": true, "console": true, "release": true,
 	}
 
-	var sigTokens []string
+	set := make(map[string]struct{})
 	for _, t := range tokens {
-		if !genericWords[t] {
-			sigTokens = append(sigTokens, t)
+		if !genericWords[t] && !isNumericToken(t) {
+			set[t] = struct{}{}
 		}
 	}
-
-	if len(sigTokens) == 0 {
-		sigTokens = tokens
+	if len(set) == 0 {
+		for _, t := range tokens {
+			if !isNumericToken(t) {
+				set[t] = struct{}{}
+			}
+		}
 	}
-
-	set := make(map[string]struct{})
-	for _, t := range sigTokens {
-		set[t] = struct{}{}
+	if len(set) == 0 {
+		for _, t := range tokens {
+			set[t] = struct{}{}
+		}
 	}
 
 	uniq := make([]string, 0, len(set))
 	for tok := range set {
 		uniq = append(uniq, tok)
 	}
-	sort.Strings(uniq)
 
-	// Keep up to 5 significant keywords for the signature
-	if len(uniq) > 5 {
-		uniq = uniq[:5]
+	// Sort by token length descending (longest and rarest tokens first), ties broken alphabetically
+	sort.Slice(uniq, func(i, j int) bool {
+		if len(uniq[i]) != len(uniq[j]) {
+			return len(uniq[i]) > len(uniq[j])
+		}
+		return uniq[i] < uniq[j]
+	})
+
+	// Keep up to 7 most substantive keywords for the signature
+	maxTokens := 7
+	if len(uniq) > maxTokens {
+		uniq = uniq[:maxTokens]
 	}
+
+	// Sort canonical signature alphabetically
+	sort.Strings(uniq)
 
 	return "[" + strings.Join(uniq, ", ") + "]"
 }
@@ -135,9 +150,9 @@ func FingerprintText(s string) string {
 }
 
 // BuildSimilarityText normalizes text used for near-duplicate checks.
+// Only uses raw titles to avoid language mismatch against Ukrainian body text.
 func BuildSimilarityText(title, description string) string {
-	// Duplicate title once to weight headline intent over noisy body tails.
-	return strings.TrimSpace(FingerprintText(title + " " + title + " " + description))
+	return strings.TrimSpace(FingerprintText(title))
 }
 
 // ThresholdForSourceType returns duplicate sensitivity by feed type.
@@ -165,7 +180,7 @@ func tokenSet(s string) map[string]bool {
 
 func normalizeTokens(s string) []string {
 	s = strings.ToLower(s)
-	s = strings.NewReplacer("'", "", "`", "", "’", "").Replace(s)
+	s = strings.NewReplacer("'", "", "`", "", "’", "", "$", "", "£", "", "€", "", "¥", "").Replace(s)
 	for _, phrase := range fillerPhrases {
 		s = strings.ReplaceAll(s, phrase, " ")
 	}
@@ -191,7 +206,8 @@ func isNumericToken(tok string) bool {
 		return false
 	}
 	for i := 0; i < len(tok); i++ {
-		if tok[i] < '0' || tok[i] > '9' {
+		c := tok[i]
+		if (c < '0' || c > '9') && c != 'm' && c != 'k' && c != 'b' {
 			return false
 		}
 	}
