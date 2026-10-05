@@ -3,12 +3,97 @@ package dedup
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 var tokenRe = regexp.MustCompile(`[a-z0-9]+`)
+
+var monthMap = map[string]string{
+	"january": "jan", "jan": "jan",
+	"february": "feb", "feb": "feb",
+	"march": "mar", "mar": "mar",
+	"april": "apr", "apr": "apr",
+	"may": "may",
+	"june": "jun", "jun": "jun",
+	"july": "jul", "jul": "jul",
+	"august": "aug", "aug": "aug",
+	"september": "sep", "sept": "sep", "sep": "sep",
+	"october": "oct", "oct": "oct",
+	"november": "nov", "nov": "nov",
+	"december": "dec", "dec": "dec",
+}
+
+var (
+	reMonthDay  = regexp.MustCompile(`(?i)\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b`)
+	reDayMonth  = regexp.MustCompile(`(?i)\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b`)
+	reSlashDate = regexp.MustCompile(`\b(\d{1,2})/(\d{1,2})(?:/\d{2,4})?\b`)
+	reISODate   = regexp.MustCompile(`\b\d{4}-(\d{2})-(\d{2})\b`)
+)
+
+// ExtractDateMarkers extracts canonical date keys (e.g. "date:oct_4", "date:9/23") from titles.
+func ExtractDateMarkers(title string) []string {
+	seen := make(map[string]struct{})
+
+	for _, m := range reMonthDay.FindAllStringSubmatch(title, -1) {
+		mon := monthMap[strings.ToLower(m[1])]
+		day, _ := strconv.Atoi(m[2])
+		if mon != "" && day >= 1 && day <= 31 {
+			seen[fmt.Sprintf("date:%s_%d", mon, day)] = struct{}{}
+		}
+	}
+
+	for _, m := range reDayMonth.FindAllStringSubmatch(title, -1) {
+		day, _ := strconv.Atoi(m[1])
+		mon := monthMap[strings.ToLower(m[2])]
+		if mon != "" && day >= 1 && day <= 31 {
+			seen[fmt.Sprintf("date:%s_%d", mon, day)] = struct{}{}
+		}
+	}
+
+	for _, m := range reSlashDate.FindAllStringSubmatch(title, -1) {
+		n1, _ := strconv.Atoi(m[1])
+		n2, _ := strconv.Atoi(m[2])
+		if n1 >= 1 && n1 <= 12 && n2 >= 1 && n2 <= 31 {
+			seen[fmt.Sprintf("date:%d/%d", n1, n2)] = struct{}{}
+		}
+	}
+
+	for _, m := range reISODate.FindAllStringSubmatch(title, -1) {
+		n1, _ := strconv.Atoi(m[1])
+		n2, _ := strconv.Atoi(m[2])
+		if n1 >= 1 && n1 <= 12 && n2 >= 1 && n2 <= 31 {
+			seen[fmt.Sprintf("date:%d/%d", n1, n2)] = struct{}{}
+		}
+	}
+
+	res := make([]string, 0, len(seen))
+	for k := range seen {
+		res = append(res, k)
+	}
+	sort.Strings(res)
+	return res
+}
+
+// HasConflictingDateMarkers returns true if both titles specify dates and their dates are disjoint.
+func HasConflictingDateMarkers(t1, t2 string) bool {
+	d1 := ExtractDateMarkers(t1)
+	d2 := ExtractDateMarkers(t2)
+	if len(d1) == 0 || len(d2) == 0 {
+		return false
+	}
+	for _, a := range d1 {
+		for _, b := range d2 {
+			if a == b {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 var stopwords = map[string]struct{}{
 	"a": {}, "an": {}, "the": {}, "and": {}, "or": {}, "but": {},
@@ -32,7 +117,8 @@ var fillerPhrases = []string{
 // It prioritizes the longest and rarest substantive tokens instead of slicing alphabetically.
 func SemanticSignature(title string) string {
 	tokens := normalizeTokens(title)
-	if len(tokens) == 0 {
+	dateMarkers := ExtractDateMarkers(title)
+	if len(tokens) == 0 && len(dateMarkers) == 0 {
 		return "[]"
 	}
 
@@ -80,6 +166,11 @@ func SemanticSignature(title string) string {
 		uniq = uniq[:maxTokens]
 	}
 
+	// Always include date markers so distinct dates in recurring series produce distinct signatures
+	for _, dm := range dateMarkers {
+		uniq = append(uniq, dm)
+	}
+
 	// Sort canonical signature alphabetically
 	sort.Strings(uniq)
 
@@ -104,6 +195,9 @@ func HashTitle(title string) string {
 // IsNearDuplicate returns true when any recent text reaches threshold.
 func IsNearDuplicate(text string, recent []string, threshold float64) bool {
 	for _, r := range recent {
+		if HasConflictingDateMarkers(text, r) {
+			continue
+		}
 		if Similarity(text, r) >= threshold {
 			return true
 		}
@@ -112,7 +206,11 @@ func IsNearDuplicate(text string, recent []string, threshold float64) bool {
 }
 
 // Similarity is a Jaccard similarity on normalized token sets.
+// If two texts have conflicting recurring series dates, they are not duplicates (similarity = 0).
 func Similarity(a, b string) float64 {
+	if HasConflictingDateMarkers(a, b) {
+		return 0.0
+	}
 	setA := tokenSet(a)
 	setB := tokenSet(b)
 	if len(setA) == 0 && len(setB) == 0 {
@@ -152,7 +250,7 @@ func FingerprintText(s string) string {
 // BuildSimilarityText normalizes text used for near-duplicate checks.
 // Only uses raw titles to avoid language mismatch against Ukrainian body text.
 func BuildSimilarityText(title, description string) string {
-	return strings.TrimSpace(FingerprintText(title))
+	return strings.TrimSpace(title)
 }
 
 // ThresholdForSourceType returns duplicate sensitivity by feed type.

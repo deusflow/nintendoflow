@@ -77,3 +77,74 @@ func TestPiracyLawsuitDuplicateTitlesWithoutLLM(t *testing.T) {
 	}
 }
 
+func TestRegularSeriesWithDifferentDatesNotDuplicates(t *testing.T) {
+	cases := []struct {
+		name string
+		t1   string
+		t2   string
+	}{
+		{
+			name: "Nintendo pre-order updates October 4 vs October 11",
+			t1:   "Nintendo pre-order updates – October 4",
+			t2:   "Nintendo pre-order updates – October 11",
+		},
+		{
+			name: "Japanese Nintendo eShop releases October 8 vs October 15",
+			t1:   "Japanese Nintendo eShop releases for October 8",
+			t2:   "Japanese Nintendo eShop releases for October 15",
+		},
+		{
+			name: "Weekly Famitsu with slash dates",
+			t1:   "Famitsu Sales: 9/23/24 – 9/29/24",
+			t2:   "Famitsu Sales: 9/30/24 – 10/6/24",
+		},
+		{
+			name: "Weekly Famitsu with full dates",
+			t1:   "Famitsu weekly sales: October 3, 2026",
+			t2:   "Famitsu weekly sales: October 10, 2026",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 1. Semantic signatures must not match
+			sig1 := SemanticSignature(tc.t1)
+			sig2 := SemanticSignature(tc.t2)
+			if sig1 == sig2 {
+				t.Fatalf("expected different semantic signatures for %q and %q, both got %s", tc.t1, tc.t2, sig1)
+			}
+
+			// 2. HashTitle must not match
+			if HashTitle(tc.t1) == HashTitle(tc.t2) {
+				t.Fatalf("expected different HashTitle for %q and %q", tc.t1, tc.t2)
+			}
+
+			// 3. Similarity must be 0 due to conflicting dates
+			sim := Similarity(tc.t1, tc.t2)
+			if sim != 0.0 {
+				t.Fatalf("expected similarity 0.0 for conflicting dates, got %f", sim)
+			}
+
+			// 4. Must NOT be considered near duplicate
+			text1 := BuildSimilarityText(tc.t1, "")
+			text2 := BuildSimilarityText(tc.t2, "")
+			if IsNearDuplicate(text1, []string{text2}, 0.50) {
+				t.Fatalf("expected titles with different dates not to be duplicates")
+			}
+		})
+	}
+
+	// Also verify that when BOTH the event AND the date match, it IS treated as a duplicate:
+	t.Run("Same series same date is a duplicate", func(t *testing.T) {
+		t1 := "Nintendo pre-order updates – October 4"
+		t2 := "Nintendo pre-order updates – October 4 (Latest Edition)"
+
+		text1 := BuildSimilarityText(t1, "")
+		text2 := BuildSimilarityText(t2, "")
+		if !IsNearDuplicate(text1, []string{text2}, 0.60) {
+			t.Fatalf("expected identical event on the same date to be treated as duplicate")
+		}
+	})
+}
+
+
