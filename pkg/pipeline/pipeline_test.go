@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/deuswork/nintendoflow/pkg/ai"
 	"github.com/deuswork/nintendoflow/pkg/config"
 	"github.com/deuswork/nintendoflow/pkg/fetcher"
 )
@@ -85,7 +87,7 @@ func TestBuildSelectorPromptIncludesDates(t *testing.T) {
 		},
 	}
 
-	prompt := buildSelectorPrompt(candidates)
+	prompt := buildSelectorPrompt(candidates, nil)
 	if !strings.Contains(prompt, "2026-10-03") && !strings.Contains(prompt, "03.10.2026") {
 		t.Errorf("expected selector prompt to contain candidate publication date, got:\n%s", prompt)
 	}
@@ -321,6 +323,105 @@ func TestQuarantineNotCountedTwiceAcrossRuns(t *testing.T) {
 		t.Fatalf("quarantine alert SHOULD be sent when 5 new items are quarantined")
 	}
 }
+
+func TestSelectorPromptIncludesPublishedTitlesAndEventDedupInstruction(t *testing.T) {
+	pubDate := time.Date(2026, 9, 26, 14, 0, 0, 0, time.UTC)
+	candidates := []candidate{
+		{
+			item: fetcher.Item{
+				Title:       "Nintendo Awarded $4.5M in Piracy Lawsuit Against SwitchPirates Moderator",
+				Description: "Nintendo secured a default judgment against James Williams.",
+				SourceType:  "media",
+				PublishedAt: &pubDate,
+			},
+			score: 180,
+		},
+	}
+	publishedTitles := []string{
+		"Nintendo Wins $4.5 Million Judgment Against SwitchPirates Subreddit Moderator",
+	}
+
+	prompt := buildSelectorPrompt(candidates, publishedTitles)
+
+	if !strings.Contains(prompt, "Nintendo Wins $4.5 Million Judgment Against SwitchPirates Subreddit Moderator") {
+		t.Fatalf("expected selector prompt to include 30-day published titles, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "КАТЕГОРИЧНО НЕ ВИБИРАЙ НОВИНУ ПРО ТЕ Ж САМЕ ПОДІЮ") {
+		t.Fatalf("expected selector prompt to include anti-duplicate instruction, got:\n%s", prompt)
+	}
+}
+
+func TestPiracyLawsuitDuplicatePairConsideredDuplicate(t *testing.T) {
+	// Post published on 2026-09-24
+	publishedTitles := []string{
+		"Nintendo Wins $4.5 Million Judgment Against SwitchPirates Subreddit Moderator",
+	}
+
+	date26 := time.Date(2026, 9, 26, 15, 0, 0, 0, time.UTC)
+	// Duplicate candidate on 2026-09-26 covering the exact same event
+	candidate1 := candidate{
+		item: fetcher.Item{
+			Title:       "Nintendo Awarded $4.5M in Piracy Lawsuit Against SwitchPirates Moderator",
+			Description: "Nintendo was awarded $4.5 million in a piracy lawsuit against a Reddit moderator who ran pirate shops for Nintendo Switch games.",
+			SourceType:  "media",
+			PublishedAt: &date26,
+		},
+		score: 200,
+	}
+
+	// Fresh, non-duplicate candidate on 2026-09-26
+	candidate2 := candidate{
+		item: fetcher.Item{
+			Title:       "Kirby and the World Beyond Announced for Nintendo Switch 2",
+			Description: "HAL Laboratory and Nintendo announced the next mainline 3D adventure coming to Nintendo Switch 2.",
+			SourceType:  "official",
+			PublishedAt: &date26,
+		},
+		score: 180,
+	}
+
+	candidates := []candidate{candidate1, candidate2}
+	prompt := buildSelectorPrompt(candidates, publishedTitles)
+
+	// Verify prompt incorporates the published title and instructions
+	if !strings.Contains(prompt, publishedTitles[0]) {
+		t.Fatalf("expected prompt to contain published title from 24.09")
+	}
+
+	// Test 1: Parser handles SKIP cleanly
+	skipIdx, okSkip := parseSelectedIndex("SKIP", len(candidates))
+	if okSkip {
+		t.Fatalf("expected parseSelectedIndex to return false for SKIP, got idx=%d", skipIdx)
+	}
+
+	// Test 2: If live Gemini API key is present in environment, test with the live model
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		provider, err := ai.NewGeminiProvider(ctx, apiKey, "gemini-3.5-flash")
+		if err == nil {
+			// When Candidate 2 (Kirby) is present, the model must NOT choose Candidate 1 (the duplicate)
+			resp, err := provider.Complete(ctx, prompt)
+			if err == nil {
+				idx, ok := parseSelectedIndex(resp, len(candidates))
+				if !ok || idx != 1 {
+					t.Errorf("expected model to reject duplicate candidate 1 and choose candidate 2 (got response %q)", resp)
+				}
+			}
+
+			// When ONLY Candidate 1 (the duplicate) is present, the model must return SKIP
+			promptOnlyDup := buildSelectorPrompt([]candidate{candidate1}, publishedTitles)
+			respOnlyDup, err := provider.Complete(ctx, promptOnlyDup)
+			if err == nil {
+				if !strings.Contains(strings.ToUpper(respOnlyDup), "SKIP") {
+					t.Errorf("expected model to return SKIP when only duplicate candidate is present, got %q", respOnlyDup)
+				}
+			}
+		}
+	}
+}
+
 
 
 

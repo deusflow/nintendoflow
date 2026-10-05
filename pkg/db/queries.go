@@ -294,6 +294,37 @@ func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string
 	return result, nil
 }
 
+// FetchRecentPublishedTitles returns titles of published articles in the last 'hours'.
+func FetchRecentPublishedTitles(ctx context.Context, db *sql.DB, hours int) ([]string, error) {
+	if db == nil {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT title_raw
+		FROM articles
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
+		  AND (status = $2 OR posted_tg = true)
+		  AND title_raw IS NOT NULL
+		  AND title_raw <> ''
+		ORDER BY created_at DESC
+		LIMIT 100`, hours, StatusPublished)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var titles []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		titles = append(titles, t)
+	}
+	return titles, rows.Err()
+}
+
+
 // UpdateBodies sets body_ua, body_threads and ai_provider after rewrite.
 func UpdateBodies(ctx context.Context, db *sql.DB, id int, bodyUA, bodyThreads, aiProvider string) error {
 	_, err := db.ExecContext(ctx, `

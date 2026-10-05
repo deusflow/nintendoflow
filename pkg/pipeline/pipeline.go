@@ -32,6 +32,7 @@ const (
 	mediaFreshnessHours        = 24
 	insiderFreshnessHours      = 36
 	maxAgePenaltyPercent       = 60
+	defaultDedupHours          = 30 * 24 // 30 days window for deduplication
 )
 
 type candidate struct {
@@ -73,7 +74,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 
 	// -- 6. Local filtering only (freshness + DB dedup hashes + score) ----
 	candidates := make([]candidate, 0, len(items))
-	dedupHours := maxInt(cfg.RecentTitlesHours, maxInt(aggregatorFreshnessHours, maxInt(mediaFreshnessHours, insiderFreshnessHours)))
+	dedupHours := maxInt(cfg.RecentTitlesHours, defaultDedupHours)
 
 	knownURLs, err := db.FetchRecentURLHashes(ctx, database, dedupHours)
 	if err != nil {
@@ -92,6 +93,10 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	}
 	for i := range recentDedupTexts {
 		recentDedupTexts[i] = dedup.FingerprintText(recentDedupTexts[i])
+	}
+	recentPublishedTitles, err := db.FetchRecentPublishedTitles(ctx, database, dedupHours)
+	if err != nil {
+		slog.Warn("fetch recent published titles failed", "error", err)
 	}
 
 	for _, item := range items {
@@ -229,7 +234,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	}
 	topCandidates := checkedCandidates
 
-	selectionPrompt := buildSelectorPrompt(topCandidates)
+	selectionPrompt := buildSelectorPrompt(topCandidates, recentPublishedTitles)
 
 	var selectedIdx int
 	aiSelectorUsed = true
@@ -239,6 +244,40 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 	} else {
 		slog.Info("AI selector used", "provider", manager.LastProvider())
+		if strings.Contains(strings.ToUpper(rawSelection), "SKIP") {
+			slog.Info("AI selector decided to skip all candidates (duplicates or low quality)", "response", rawSelection)
+			if cfg.DryRun {
+				fmt.Println("\n==================== DRY RUN REPORT ====================")
+				fmt.Printf("1. QUARANTINED ARTICLES (%d total):\n", len(quarantined))
+				if len(quarantined) == 0 {
+					fmt.Println("   (none)")
+				} else {
+					for i, q := range quarantined {
+						reason := quarantineReasons[q.item.Link]
+						if reason == "" {
+							reason = "source date missing or unreachable"
+						}
+						fmt.Printf("   [%d] %s\n       Source: %s | URL: %s\n       Reason: %s\n", i+1, q.item.Title, q.item.SourceName, q.item.Link, reason)
+					}
+				}
+
+				fmt.Printf("\n2. CANDIDATES CONSIDERED BY SELECTOR (%d total):\n", len(topCandidates))
+				for i, tc := range topCandidates {
+					pubStr := "unknown"
+					if tc.item.PublishedAt != nil {
+						pubStr = tc.item.PublishedAt.UTC().Format(time.RFC3339)
+					}
+					fmt.Printf("   [%d] %s\n       Source: %s | Score: %d | Published: %s\n", i+1, tc.item.Title, tc.item.SourceName, tc.score, pubStr)
+				}
+
+				fmt.Println("\n3. SELECTED CANDIDATE:")
+				fmt.Println("   (AI selector returned SKIP: all candidates are duplicates of recent published events or lack substance)")
+				fmt.Println("========================================================")
+				fmt.Println()
+			}
+			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+			return
+		}
 		idx, ok := parseSelectedIndex(rawSelection, len(topCandidates))
 		if !ok {
 			slog.Warn("AI selector returned invalid number, using top-scored fallback", "response", rawSelection)
@@ -460,12 +499,24 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 }
 
-func buildSelectorPrompt(candidates []candidate) string {
+func buildSelectorPrompt(candidates []candidate, publishedTitles []string) string {
 	now := time.Now()
 	nowStr := now.Format("2006-01-02")
 	var b strings.Builder
 	b.WriteString("Choose the best news candidate for a Ukrainian Nintendo Telegram channel.\n")
 	fmt.Fprintf(&b, "Сьогоднішня дата: %s\n", nowStr)
+
+	if len(publishedTitles) > 0 {
+		b.WriteString("\n=== ОПУБЛІКОВАНІ ПОСТИ ЗА ОСТАННІ 30 ДНІВ (ЗАБОРОНЕНО ДУБЛЮВАТИ ПОДІЇ) ===\n")
+		for _, pt := range publishedTitles {
+			t := strings.TrimSpace(pt)
+			if t != "" {
+				fmt.Fprintf(&b, "• %s\n", t)
+			}
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString("Here is the ranked list of candidates (already scored by internal logic):\n\n")
 
 	for i, c := range candidates {
@@ -493,15 +544,19 @@ func buildSelectorPrompt(candidates []candidate) string {
 	}
 
 	b.WriteString(fmt.Sprintf(`Editorial Guidelines & Selection Instructions:
-1. NINTENDO-FIRST PRIORITY: The channel is primarily about NINTENDO AS A COMPANY AND ECOSYSTEM, not just an endless feed of routine third-party game release dates.
+1. КАТЕГОРИЧНО НЕ ВИБИРАЙ НОВИНУ ПРО ТЕ Ж САМЕ ПОДІЮ (АНТИ-ДУБЛЬ):
+   - Уважно звіряйся зі списком опублікованих постів за останні 30 днів вище.
+   - Якщо кандидат розповідає про ту саму подію, судовий процес, вирок, оновлення чи анонс, який уже висвітлювався в каналі (наприклад, позов проти піратства / модератора Reddit SwitchPirates) — це ДУБЛЬ, навіть якщо інше видання переписало новину через 2 дні чи тиждень. Не вибирай новину про те ж саме подію!
+   - Якщо кандидат дублює опубліковану подію — категорично відхиляй його.
+2. NINTENDO-FIRST PRIORITY: The channel is primarily about NINTENDO AS A COMPANY AND ECOSYSTEM, not just an endless feed of routine third-party game release dates.
    - TOP PRIORITY: Nintendo company moves, official Nintendo Direct announcements, executive statements (Furukawa, Miyamoto, Aonuma, Koizumi), console sales milestones, financial earnings reports, Nintendo Switch Online updates, backward compatibility, firmware/OS updates, Nintendo Museum, legal battles/IP protection (e.g. Palworld/Pocketpair lawsuit, emulator bans), and major first-party franchise announcements (Mario, Zelda, Pokemon, Metroid, Smash).
    - MEDIUM PRIORITY: Exclusive third-party partnerships, major Switch 2 technical breakthroughs (DLSS, performance reveals).
    - LOW PRIORITY: Generic multiplatform game release date announcements, minor indie ports, routine game trailers.
    - If a candidate covering Nintendo corporate, hardware, executive statement, or ecosystem is present alongside routine indie/3rd-party game release dates, ALWAYS prefer the Nintendo corporate/hardware/ecosystem candidate!
-2. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років та матеріали, які подають як майбутнє або невідоме те, що вже давно вийшло за списком пристроїв.
-3. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
-4. Return ONLY the number of the best candidate (e.g., 1 or 2).
-5. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`, nowStr))
+3. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років та матеріали, які подають як майбутнє або невідоме те, що вже давно вийшло за списком пристроїв.
+4. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
+5. Return ONLY the number of the best candidate (e.g., 1 or 2).
+6. If all candidates are duplicates, weak, repetitive, or lack substance, return "SKIP" instead of a number.`, nowStr))
 	return b.String()
 }
 
