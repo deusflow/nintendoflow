@@ -2,16 +2,145 @@ package ai
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // NewsInput — структура для передачи параметров новости.
 type NewsInput struct {
-	Title       string
-	Body        string
-	Source      string
-	DevilTheory string
+	Title        string
+	Body         string
+	Source       string
+	PublishedAt  *time.Time
+	CurrentTime  time.Time
+	DevilTheory  string
+	FactsPath    string
+}
+
+// DeviceFact represents a verified hardware release event.
+type DeviceFact struct {
+	Name        string
+	ReleaseDate time.Time
+	Status      string
+}
+
+var defaultFacts = []DeviceFact{
+	{Name: "Nintendo Switch 2", ReleaseDate: time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC), Status: "вже в продажу"},
+	{Name: "Nintendo Switch 2 Pro Controller", ReleaseDate: time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC), Status: "вже в продажу"},
+	{Name: "Nintendo Switch (оригінальна модель)", ReleaseDate: time.Date(2017, 3, 3, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
+	{Name: "Nintendo Switch OLED", ReleaseDate: time.Date(2021, 10, 8, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
+	{Name: "Nintendo Switch Lite", ReleaseDate: time.Date(2019, 9, 20, 0, 0, 0, 0, time.UTC), Status: "в продажу"},
+}
+
+// MonthsBetween calculates elapsed full calendar months from 'from' to 'to'.
+func MonthsBetween(from, to time.Time) int {
+	if to.Before(from) {
+		return 0
+	}
+	years := to.Year() - from.Year()
+	months := int(to.Month()) - int(from.Month())
+	total := years*12 + months
+	if to.Day() < from.Day() {
+		total--
+	}
+	if total < 0 {
+		total = 0
+	}
+	return total
+}
+
+// FormatMonthsUA formats the month count into natural Ukrainian phrasing.
+func FormatMonthsUA(n int) string {
+	mod10 := n % 10
+	mod100 := n % 100
+	if mod100 >= 11 && mod100 <= 19 {
+		return fmt.Sprintf("%d місяців", n)
+	}
+	switch mod10 {
+	case 1:
+		return fmt.Sprintf("%d місяць", n)
+	case 2, 3, 4:
+		return fmt.Sprintf("%d місяці", n)
+	default:
+		return fmt.Sprintf("%d місяців", n)
+	}
+}
+
+// ParseFacts parses lines in format: "назва | дата релізу | статус".
+func ParseFacts(content string) []DeviceFact {
+	var facts []DeviceFact
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) >= 3 {
+			name := strings.TrimSpace(parts[0])
+			dateStr := strings.TrimSpace(parts[1])
+			status := strings.TrimSpace(parts[2])
+			t, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				continue
+			}
+			facts = append(facts, DeviceFact{
+				Name:        name,
+				ReleaseDate: t,
+				Status:      status,
+			})
+		}
+	}
+	return facts
+}
+
+// FormatFactsBlock formats device facts with dynamically calculated months since release.
+func FormatFactsBlock(facts []DeviceFact, now time.Time) string {
+	var b strings.Builder
+	for _, f := range facts {
+		months := MonthsBetween(f.ReleaseDate, now)
+		dateStr := f.ReleaseDate.Format("2006-01-02")
+		b.WriteString(fmt.Sprintf("• %s | дата релізу: %s | статус: %s (пройшло %s з релізу)\n",
+			f.Name, dateStr, f.Status, FormatMonthsUA(months)))
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// LoadWorldFacts loads device release facts from facts.md (or custom path / FACTS_PATH env).
+// If missing or unreadable, logs a warning with searched paths and returns fallback facts.
+func LoadWorldFacts(path string, now time.Time) string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	var searchedPaths []string
+	if path == "" {
+		path = os.Getenv("FACTS_PATH")
+	}
+	if path != "" {
+		searchedPaths = append(searchedPaths, path)
+		if content, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(content))) > 0 {
+			facts := ParseFacts(string(content))
+			if len(facts) > 0 {
+				return FormatFactsBlock(facts, now)
+			}
+		}
+	}
+	candidates := []string{"facts.md", "../facts.md", "../../facts.md"}
+	for _, c := range candidates {
+		searchedPaths = append(searchedPaths, c)
+		if content, err := os.ReadFile(c); err == nil && len(strings.TrimSpace(string(content))) > 0 {
+			facts := ParseFacts(string(content))
+			if len(facts) > 0 {
+				return FormatFactsBlock(facts, now)
+			}
+		}
+	}
+
+	slog.Warn("facts.md not found, using fallback world facts", "searched_paths", searchedPaths)
+	return FormatFactsBlock(defaultFacts, now)
 }
 
 // sanitizeInput removes potential prompt injection attempts from user-supplied data without corrupting legitimate vocabulary.
@@ -40,7 +169,7 @@ func sanitizeInput(s string) string {
 	return strings.TrimSpace(result)
 }
 
-// styleGuide — инструкции стиля для модели. Объявлен первым — читается сверху вниз.
+// styleGuide — инструкции стиля для модели.
 const styleGuide = `Ти — автор популярного українського Telegram-каналу про Nintendo (DEUSFLOW). Ти пишеш як жива, розумна людина, яка добре розбирається в Nintendo, цінує час читача і вміє просто та цікаво пояснити суть без зайвого пафосу та "води".
 
 НЕ пиши як пресреліз, велике корпоративне медіа або штучно "пафосний інсайдер".
@@ -81,11 +210,10 @@ const styleGuide = `Ти — автор популярного українсь�
 • "Йооой", "Оце так"
 • ХЕШТЕГИ СУВОРО ЗАБОРОНЕНІ! Ніяких #Nintendo в кінці.
 
-== ЧАСОВИЙ ТА ТЕМАТИЧНИЙ КОНТЕКСТ (ВЕРЕСЕНЬ 2026 РОКУ) ==
-Зараз вересень 2026 року (осінній сезон Nintendo Direct та Tokyo Game Show).
-Switch 2 вийшла у продаж у СІЧНІ 2026 року і вже понад 8 місяців успішно продається на світовому ринку.
-• ЗАБОРОНЕНО писати про Switch 2 як про майбутню невідому консоль ("нова ера попереду", "що чекає на горизонті", "коли вийде"). Новини про Switch 2 — це реальні системні оновлення, тиражі продажів, нові ігри, патчі зворотньої сумісності та DLSS-продуктивність.
-• ФОКУС НА САМІЙ NINTENDO: Заяви керівництва (Шунтаро Фурукава, Шігеру Міямото, Ейджі Аонума), фінансові звіти, Nintendo Direct, оновлення NSO, судові позови щодо захисту патентів (як проти Pocketpair/Palworld), музей Nintendo та тематичні проєкти мають першочергову цінність і вимагають глибокої, розумної подачі.
+== РЕДАКТОРСЬКІ ПРІОРИТЕТИ ТА ПРАВИЛА ВІДБОРУ ТЕМ ==
+• ПРІОРИТЕТ САМІЙ NINTENDO: Заяви керівництва компанії (Шунтаро Фурукава, Шігеру Міямото, Ейджі Аонума), фінансові звіти, презентації Nintendo Direct, оновлення NSO, судові позови щодо захисту авторських прав і патентів (як проти Pocketpair/Palworld, піратства тощо), музей Nintendo та тематичні проєкти мають найвищу цінність і вимагають глибокої, розумної подачі.
+• ПРИСТРОЇ ВЖЕ НА РИНКУ: Звіряйся з блоком картини світу вище. Якщо консоль чи контролер уже давно вийшли у продаж (пройшли місяці чи роки з релізу), ЗАБОРОНЕНО писати про них як про невідомі або майбутні пристрої ("нова консоль на підході", "що принесе майбутнє"). Новини про них — це лише реальні оновлення, тиражі продажів, нові ігри та аксесуари.
+• АНТИ-КЛІКБЕЙТ ТА АНТИ-ЗВАЛКА: Не роби новин з контенту, який пережовує старі документи (наприклад, реєстрації або витоки багатомісячної давнини, старі патенти, або "чутки" про функції пристроїв, які вже давно відомі або спростовані).
 
 == СТИЛЬ ДЛЯ TELEGRAM (telegram_html) ==
 Тон: живий, динамічний, експертний. Тільки українська мова.
@@ -102,8 +230,16 @@ Switch 2 вийшла у продаж у СІЧНІ 2026 року і вже по
 2. Емодзі помірно (✨, 🌸, 🎮).
 3. Тільки звичайний текст (жодного HTML чи Markdown).
 
-== ПРАВИЛО SKIP ==
-Якщо новина зовсім нудна, не варта уваги або не містить інформації — встанови "skip": true у JSON.
+== ПРАВИЛО SKIP (ОБОВ'ЯЗКОВО ДЛЯ НЕПРИДАТНИХ НОВИН) ==
+Якщо новина:
+1) Застаріла, пережовує старі чутки/витоки або описує як майбутню подію те, що вже давно відбулося за картиною світу;
+2) АБО малозначуща, нудна, не варта публікації чи не містить конкретики —
+ТИ ЗОБОВ'ЯЗАНИЙ повернути JSON з "skip": true та обов'язковим зазначенням чіткої причини в полі "reason".
+Формат:
+{
+  "skip": true,
+  "reason": "чітке пояснення причини пропуску (наприклад: пристрій вийшов у 2025 році, новина спекулює на старих витоках)"
+}
 
 == ЖИВІ ПРИКЛАДИ ==
 Вхід: "In Pokopia, developers confirmed unique dialogue systems, improved character animations, and a full co-op multiplayer mode."
@@ -116,12 +252,14 @@ Switch 2 вийшла у продаж у СІЧНІ 2026 року і вже по
 }`
 
 // promptTemplate — шаблон финального запроса.
-// Порядок аргументов: styleGuide, Title, Body, Source.
+// Порядок аргументов: fullSystemGuide, currentDate, pubDate, Title, Body, theoryBlock, Source.
 const promptTemplate = `%s
 
 === КІНЕЦЬ ІНСТРУКЦІЙ ===
 
 === НОВИНА (ПЕРЕКЛАДИ ТА АДАПТУЙ УКРАЇНСЬКОЮ МОВОЮ) ===
+Сьогоднішня дата: %s
+Дата публікації статті: %s
 Заголовок: %s
 
 Текст: %s
@@ -129,26 +267,57 @@ const promptTemplate = `%s
 Джерело: %s
 
 === ЗАВДАННЯ ===
-Згенеруй JSON з двома варіантами тексту (для Telegram та для Threads) згідно стилю вище.
-ВАЖЛИВО: Обидва тексти ("telegram_html" та "threads_text") мають бути ВИКЛЮЧНО УКРАЇНСЬКОЮ МОВОЮ (переклади з оригінального тексту).
-Тип новини вибери з: insight, rumor, news, offtop.
-Відповідь має бути ВАЛІДНИМ JSON (нічого крім JSON):
+Згенеруй JSON згідно інструкцій вище.
+Враховуй дату публікації статті, сьогоднішню дату та картину світу!
+Якщо новина застаріла, неправдива або не варта публікації — обов'язково поверни:
+{
+  "skip": true,
+  "reason": "детальна причина пропуску"
+}
+Якщо публікуємо — згенеруй валідний JSON з текстами для Telegram та Threads:
 {
   "skip": false,
   "type": "news",
   "telegram_html": "...",
   "threads_text": "..."
-}`
+}
+Тип новини вибери з: insight, rumor, news, offtop.
+Відповідь має бути ВАЛІДНИМ JSON (нічого крім JSON).`
 
 // BuildPrompt собирает финальный текст запроса из данных новости.
 func BuildPrompt(in NewsInput) string {
+	currentTime := in.CurrentTime
+	if currentTime.IsZero() {
+		currentTime = time.Now()
+	}
+	currentDateStr := currentTime.Format("2006-01-02")
+
+	pubDateStr := "невідома"
+	if in.PublishedAt != nil && !in.PublishedAt.IsZero() {
+		pubDateStr = in.PublishedAt.UTC().Format("2006-01-02 15:04:05 UTC")
+	}
+
+	factsContent := LoadWorldFacts(in.FactsPath, currentTime)
+	worldFactsHeader := fmt.Sprintf(`== ПОТОЧНА КАРТИНА СВІТУ (СЬОГОДНІ: %s) ==
+%s
+
+== ЗВЕРНИ ОСОБЛИВУ УВАГУ НА ДАТИ ТА СВІЖІСТЬ ==
+• Сьогоднішня дата календаря: %s
+• Дата публікації джерела: %s
+• ПЕРЕВІРКА НА ЗАСТАРІЛІСТЬ ТА СПЕКУЛЯЦІЇ: Звіряйся з картиною світу вище. Якщо новина обговорює як майбутні або невідомі речі те, що вже давно відбулося (наприклад, вихід консолі чи аксесуарів, які вже місяцями продаються на ринку), або базується на старих заявках чи витоках минулих років — це застарілий вкид! У такому разі НЕ ПИШИ ПОСТ, а поверни {"skip": true, "reason": "..."}.
+`, currentDateStr, factsContent, currentDateStr, pubDateStr)
+
+	fullSystemGuide := worldFactsHeader + "\n" + styleGuide
+
 	var theoryBlock string
 	if in.DevilTheory != "" {
 		theoryBlock = "\n[СЕКРЕТНИЙ ІНСАЙТ ДЛЯ ПОСТА]: " + sanitizeInput(in.DevilTheory)
 	}
 	return fmt.Sprintf(
 		promptTemplate,
-		styleGuide,
+		fullSystemGuide,
+		currentDateStr,
+		pubDateStr,
 		sanitizeInput(in.Title),
 		sanitizeInput(in.Body),
 		theoryBlock,

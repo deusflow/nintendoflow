@@ -14,6 +14,7 @@ const (
 
 type GeneratedPost struct {
 	Skip         bool   `json:"skip"`
+	Reason       string `json:"reason,omitempty"`
 	Type         string `json:"type"`
 	TelegramHTML string `json:"telegram_html"`
 	ThreadsText  string `json:"threads_text"`
@@ -27,7 +28,7 @@ func ParseJSONPost(text string) (GeneratedPost, error) {
 	if start == -1 || end == -1 || end < start {
 		// Attempt fallback parsing if JSON is completely missing but "SKIP" is there
 		if strings.Contains(strings.ToUpper(text), "SKIP") {
-			return GeneratedPost{Skip: true}, nil
+			return GeneratedPost{Skip: true, Reason: "model output contains SKIP without JSON"}, nil
 		}
 		return GeneratedPost{}, json.Unmarshal([]byte(text), &GeneratedPost{}) // return parsing error
 	}

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -64,3 +65,27 @@ func TestSortCandidatesWithNilPublishedAtDoesNotPanic(t *testing.T) {
 		t.Fatalf("expected candidate with valid date to rank ahead of nil date, got %s", candidates[0].item.Title)
 	}
 }
+
+func TestBuildSelectorPromptIncludesDates(t *testing.T) {
+	pubDate := time.Date(2026, 10, 3, 7, 30, 0, 0, time.UTC)
+	candidates := []candidate{
+		{
+			item: fetcher.Item{
+				Title:       "Test candidate",
+				Description: "Sample body",
+				SourceType:  "aggregator",
+				PublishedAt: &pubDate,
+			},
+			score: 100,
+		},
+	}
+
+	prompt := buildSelectorPrompt(candidates)
+	if !strings.Contains(prompt, "2026-10-03") && !strings.Contains(prompt, "03.10.2026") {
+		t.Errorf("expected selector prompt to contain candidate publication date, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Сьогодні") && !strings.Contains(prompt, "Today") && !strings.Contains(prompt, "Поточна дата") {
+		t.Errorf("expected selector prompt to mention current date/time, got:\n%s", prompt)
+	}
+}
+

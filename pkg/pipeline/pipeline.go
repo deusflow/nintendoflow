@@ -264,9 +264,11 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	stageStart = time.Now()
 
 	rewritePrompt := ai.BuildPrompt(ai.NewsInput{
-		Title:  selected.item.Title,
-		Body:   articleBody,
-		Source: selected.item.SourceName,
+		Title:       selected.item.Title,
+		Body:        articleBody,
+		Source:      selected.item.SourceName,
+		PublishedAt: selected.item.PublishedAt,
+		CurrentTime: time.Now(),
 	})
 	aiRewriteUsed = true
 	rewritten, err := manager.Generate(ctx, rewritePrompt)
@@ -291,7 +293,10 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	}
 	
 	if postData.Skip {
-		slog.Info("AI explicitly skipped via JSON")
+		slog.Info("AI explicitly skipped via JSON",
+			"title", selected.item.Title,
+			"reason", postData.Reason,
+		)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
@@ -395,8 +400,11 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 }
 
 func buildSelectorPrompt(candidates []candidate) string {
+	now := time.Now()
+	nowStr := now.Format("2006-01-02")
 	var b strings.Builder
 	b.WriteString("Choose the best news candidate for a Ukrainian Nintendo Telegram channel.\n")
+	fmt.Fprintf(&b, "Сьогоднішня дата: %s\n", nowStr)
 	b.WriteString("Here is the ranked list of candidates (already scored by internal logic):\n\n")
 
 	for i, c := range candidates {
@@ -411,7 +419,11 @@ func buildSelectorPrompt(candidates []candidate) string {
 		if c.recentSimilarPosted {
 			recentFlag = ", RECENT_SIMILAR_POSTED: True"
 		}
-		fmt.Fprintf(&b, "Candidate #%d [score: %d, type: %s%s]\n", i+1, c.score, c.item.SourceType, recentFlag)
+		dateStr := "невідома"
+		if c.item.PublishedAt != nil && !c.item.PublishedAt.IsZero() {
+			dateStr = c.item.PublishedAt.UTC().Format("2006-01-02 15:04 UTC")
+		}
+		fmt.Fprintf(&b, "Candidate #%d [score: %d, type: %s, date: %s%s]\n", i+1, c.score, c.item.SourceType, dateStr, recentFlag)
 		fmt.Fprintf(&b, "Title: %s\n", c.item.Title)
 		if desc != "" {
 			fmt.Fprintf(&b, "Body: %s\n", desc)
@@ -419,15 +431,16 @@ func buildSelectorPrompt(candidates []candidate) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(`Editorial Guidelines & Selection Instructions:
+	b.WriteString(fmt.Sprintf(`Editorial Guidelines & Selection Instructions:
 1. NINTENDO-FIRST PRIORITY: The channel is primarily about NINTENDO AS A COMPANY AND ECOSYSTEM, not just an endless feed of routine third-party game release dates.
    - TOP PRIORITY: Nintendo company moves, official Nintendo Direct announcements, executive statements (Furukawa, Miyamoto, Aonuma, Koizumi), console sales milestones, financial earnings reports, Nintendo Switch Online updates, backward compatibility, firmware/OS updates, Nintendo Museum, legal battles/IP protection (e.g. Palworld/Pocketpair lawsuit, emulator bans), and major first-party franchise announcements (Mario, Zelda, Pokemon, Metroid, Smash).
    - MEDIUM PRIORITY: Exclusive third-party partnerships, major Switch 2 technical breakthroughs (DLSS, performance reveals).
    - LOW PRIORITY: Generic multiplatform game release date announcements, minor indie ports, routine game trailers.
    - If a candidate covering Nintendo corporate, hardware, executive statement, or ecosystem is present alongside routine indie/3rd-party game release dates, ALWAYS prefer the Nintendo corporate/hardware/ecosystem candidate!
-2. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
-3. Return ONLY the number of the best candidate (e.g., 1 or 2).
-4. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`)
+2. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років (наприклад, чутки чи патенти щодо базових функцій Switch 2 чи Pro Controller, оскільки ці пристрої вже давно вийшли на ринок).
+3. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
+4. Return ONLY the number of the best candidate (e.g., 1 or 2).
+5. If all candidates are weak, repetitive, or lack substance, return "SKIP" instead of a number.`, nowStr))
 	return b.String()
 }
 
