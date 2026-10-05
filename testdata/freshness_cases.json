@@ -1,62 +1,82 @@
 [
   {
     "id": "fcc_pro_controller_jack_leak",
-    "name": "FCC Headphone Jack Leak (Stale speculation on already released hardware)",
+    "name": "FCC Filing Leaks Regarding Switch 2 Pro Controller Audio Jack",
     "title": "Nintendo Switch 2 Pro Controller FCC Filing Leaks? Headphone Jack Potentially Added",
-    "body": "A recent FCC filing for model BEE-008 suggests that Nintendo might be adding a 3.5mm headphone jack to the upcoming Switch 2 Pro Controller, sparking speculation among fans waiting for hardware announcements.",
+    "body": "A new FCC filing under model number BEE-008 has appeared in regulatory databases, revealing details for an unannounced Nintendo game controller. Testing documentation confirms Bluetooth and NFC connectivity alongside testing with wired 3.5mm earbuds, leading to speculation that Nintendo plans to add an audio jack to the Switch 2 Pro Controller.",
     "source": "Google News (TOY PEOPLE)",
     "published_at": "2026-10-03T07:30:06Z",
     "expected_skip": true,
-    "description": "Перепечатка витоку FCC 2025 року про аудіороз'єм для контролера, який вже вийшов у червні 2025."
-  },
-  {
-    "id": "piracy_lawsuit_duplicate",
-    "name": "Piracy Lawsuit Repeated Report (Duplicate coverage without new facts)",
-    "title": "Nintendo wins $4.5 million in Switch piracy lawsuit against subreddit moderator (Repeated Report)",
-    "body": "A report reiterates that Nintendo was awarded $4.5 million in statutory damages against a prominent Reddit piracy moderator, restating court details from the prior week without new developments.",
-    "source": "GameRant",
-    "published_at": "2026-09-30T10:00:00Z",
-    "expected_skip": true,
-    "description": "Повторний звіт про той самий судовий вирок без нових фактів."
+    "expected_type": ""
   },
   {
     "id": "stale_magnetic_joycon_patent",
-    "name": "Stale Patent Speculation (Old patent on existing hardware)",
-    "title": "Nintendo patents new magnetic Joy-Con attachment mechanism for hybrid console",
-    "body": "An old patent filing surfaced online discussing rail and magnetic mechanisms for detachable controllers, though no new product announcement was made.",
+    "name": "Patent Filing For Hybrid Controller Attachment",
+    "title": "Nintendo Patents Magnetic Controller Attachment Mechanism For Hybrid Gaming Device",
+    "body": "A recently surfaced patent application from Nintendo outlines an alternative magnetic locking mechanism for detachable side controllers on a portable console. The diagrams detail magnetic contact pins and alignment grooves designed to secure peripheral devices during handheld play.",
     "source": "TechRadar",
     "published_at": "2026-09-15T08:00:00Z",
     "expected_skip": true,
-    "description": "Спекуляції на старих патентних заявках без анонсу."
+    "expected_type": ""
+  },
+  {
+    "id": "fresh_rumor_future_dlc",
+    "name": "Retailer Leak On Unannounced Future Zelda Expansion",
+    "title": "Retailer leak points to Zelda: Tears of the Kingdom Complete Edition with unreleased story DLC for 2027",
+    "body": "A prominent European retail database has briefly listed an unannounced Complete Edition of The Legend of Zelda: Tears of the Kingdom scheduled for mid-2027. According to the listing, the package includes the base game enhanced for Switch 2 alongside a brand-new story expansion featuring the sealing war era.",
+    "source": "VGC",
+    "published_at": "2026-10-04T15:00:00Z",
+    "expected_skip": false,
+    "expected_type": "rumor"
+  },
+  {
+    "id": "fresh_technical_firmware_update",
+    "name": "Switch 2 System Firmware 2.1.0 Update Notes",
+    "title": "Nintendo Switch 2 System Update 2.1.0 improves DLSS stability and 120Hz VRR output in dock mode",
+    "body": "Nintendo has deployed system firmware version 2.1.0 for Nintendo Switch 2 worldwide. The official patch notes detail improved handshake stability with 120Hz VRR television displays when docked, reduced frame pacing jitter in backward compatible titles running with DLSS upscaling, and overall system security improvements.",
+    "source": "Nintendo Life",
+    "published_at": "2026-10-05T06:00:00Z",
+    "expected_skip": false,
+    "expected_type": "news"
+  },
+  {
+    "id": "unconfirmed_rumor_smash_bros",
+    "name": "Anonymous Insider Leak On Next Smash Bros Project",
+    "title": "Rumor: Next Super Smash Bros. entering early production with external partner studio",
+    "body": "According to an anonymous industry insider with a track record of accurate fighting game leaks, pre-production on the next installment in the Super Smash Bros. franchise has officially begun. The report claims Masahiro Sakurai is serving as a creative supervisor while day-to-day development is co-handled by Bandai Namco Studios.",
+    "source": "Eurogamer",
+    "published_at": "2026-10-04T18:30:00Z",
+    "expected_skip": false,
+    "expected_type": "rumor"
   },
   {
     "id": "gamechat_dev_interview",
-    "name": "GameChat Developer Interview (Fresh valuable first-party insight)",
+    "name": "GameChat Developer Interview On R&D History",
     "title": "Nintendo reveals GameChat origins including Switch 1 prototype, started working on Switch 2 features in 2020",
     "body": "In an official interview published this week, Nintendo hardware and software developers revealed the origins of the GameChat system, explaining that early prototypes were tested during the original Switch era and development of new networking features for Switch 2 began back in 2020.",
     "source": "Nintendo Life",
     "published_at": "2026-10-02T14:00:00Z",
     "expected_skip": false,
-    "description": "Свіже офіційне інтерв'ю розробників про GameChat та прототипи."
+    "expected_type": "insight"
   },
   {
     "id": "nintendo_museum_exhibition",
-    "name": "Nintendo Museum Special Exhibition (High priority official event)",
+    "name": "Nintendo Museum Special Zelda Retrospective",
     "title": "Nintendo Museum announces special Zelda retrospective exhibition and exclusive hardware showcase",
     "body": "Nintendo has announced its first major special exhibition for the Nintendo Museum in Kyoto, focusing on the evolution of The Legend of Zelda with rare development materials and playable prototypes.",
     "source": "Nintendo Everything",
     "published_at": "2026-10-02T09:00:00Z",
     "expected_skip": false,
-    "description": "Спеціальна виставка в музеї Nintendo — пріоритетна свіжа подія компанії."
+    "expected_type": "news"
   },
   {
     "id": "metroid_prime_4_breakdown",
-    "name": "Metroid Prime 4 Overview (Fresh first-party gameplay showcase)",
+    "name": "Metroid Prime 4 In-Depth Gameplay Showcase",
     "title": "Metroid Prime 4: Beyond receives extensive new gameplay overview and performance breakdown",
     "body": "Nintendo has released an in-depth gameplay overview showcasing new traversal abilities, environmental scanning, and visual enhancements running at a rock-solid 60 FPS.",
     "source": "IGN",
     "published_at": "2026-10-04T12:00:00Z",
     "expected_skip": false,
-    "description": "Свіжі подробиці флагманської гри Nintendo."
+    "expected_type": "news"
   }
 ]
