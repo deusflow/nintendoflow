@@ -371,15 +371,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	threadsBody := dedup.StripForbiddenIntro(postData.ThreadsText)
 
 	hypeCount := calculateHype(selected.item, items)
-	var hypeText string
-	if hypeCount > 3 {
-		hypeText = fmt.Sprintf("\n\n🔥 <i>Цю подію обговорюють у %d інших джерелах</i>", hypeCount)
-	} else if hypeCount == 1 && isExclusiveWorthy(selected, articleType) {
-		hypeText = "\n\n💎 <i>Ексклюзив (знайдено лише тут)</i>"
-	} else if hypeCount > 1 {
-		hypeText = fmt.Sprintf("\n\n🔥 <i>Знайдено у %d джерелах</i>", hypeCount)
-	}
-	cleanBody += hypeText
+	cleanBody += formatHypeFooter(hypeCount)
 
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()
@@ -600,19 +592,14 @@ func sanitizeGeneratedBody(body string) string {
 	return strings.TrimSpace(clean)
 }
 
-func isExclusiveWorthy(c candidate, articleType string) bool {
-	if c.score < 170 {
-		return false
+func formatHypeFooter(hypeCount int) string {
+	if hypeCount > 3 {
+		return fmt.Sprintf("\n\n🔥 <i>Цю подію обговорюють у %d інших джерелах</i>", hypeCount)
 	}
-	sourceType := strings.ToLower(strings.TrimSpace(c.item.SourceType))
-	if sourceType == "aggregator" {
-		return false
+	if hypeCount > 1 {
+		return fmt.Sprintf("\n\n🔥 <i>Знайдено у %d джерелах</i>", hypeCount)
 	}
-	t := ai.NormalizeArticleType(articleType)
-	if t == ai.ArticleTypeRumor || t == ai.ArticleTypeOfftop {
-		return false
-	}
-	return true
+	return ""
 }
 
 func fallbackImageForType(articleType string) string {

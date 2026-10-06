@@ -532,3 +532,25 @@ func TestQuarantineRetryTransientVsMissingDate(t *testing.T) {
 		}
 	})
 }
+
+func TestFormatHypeFooterNoExclusiveForSingleSource(t *testing.T) {
+	// Single source should NEVER produce "Ексклюзив" or fake exclusive badge
+	if footer := formatHypeFooter(1); footer != "" {
+		t.Fatalf("expected empty footer for single source, got %q", footer)
+	}
+	if footer := formatHypeFooter(0); footer != "" {
+		t.Fatalf("expected empty footer for 0 sources, got %q", footer)
+	}
+
+	// Multiple sources: 2 or 3 sources
+	footer2 := formatHypeFooter(2)
+	if !strings.Contains(footer2, "Знайдено у 2 джерелах") {
+		t.Fatalf("expected 'Знайдено у 2 джерелах', got %q", footer2)
+	}
+
+	// High hype: >3 sources
+	footer5 := formatHypeFooter(5)
+	if !strings.Contains(footer5, "Цю подію обговорюють у 5 інших джерелах") {
+		t.Fatalf("expected 'Цю подію обговорюють у 5 других джерелах', got %q", footer5)
+	}
+}
