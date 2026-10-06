@@ -768,12 +768,33 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 			}
 
 			reason := fmt.Sprintf("fetch error: %v", err)
-			slog.Warn("candidate quarantined: source-date check failed",
-				"title", c.item.Title,
-				"source", c.item.SourceName,
-				"url", c.item.Link,
-				"error", err,
-			)
+			// Transient error: retry up to 3 runs before permanent quarantine
+			prevAttempts, prevStatus, _ := db.GetQuarantineAttempts(ctx, database, c.item.Link)
+			newAttempts, permanent, skip := evaluateQuarantine(prevAttempts, prevStatus, true)
+			if skip {
+				slog.Debug("candidate already permanently quarantined, skipping", "url", c.item.Link)
+				continue
+			}
+
+			if permanent {
+				slog.Warn("candidate quarantined permanently: source-date check failed after 3 attempts",
+					"title", c.item.Title,
+					"source", c.item.SourceName,
+					"url", c.item.Link,
+					"error", err,
+					"attempt", newAttempts,
+				)
+			} else {
+				slog.Warn("candidate fetch failed: transient error, will retry in next run",
+					"title", c.item.Title,
+					"source", c.item.SourceName,
+					"url", c.item.Link,
+					"error", err,
+					"attempt", newAttempts,
+					"max_attempts", 3,
+				)
+			}
+
 			if database != nil && (cfg == nil || !cfg.DryRun) {
 				quarantinedArticle := db.Article{
 					SourceURL:   c.item.Link,
@@ -784,15 +805,17 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 					SourceName:  c.item.SourceName,
 					SourceType:  c.item.SourceType,
 					Score:       c.score,
-					Status:      db.StatusQuarantined,
 					PublishedAt: c.item.PublishedAt,
 				}
-				if _, err := db.InsertQuarantinedArticle(ctx, database, quarantinedArticle); err != nil {
-					slog.Warn("failed to record quarantined article in database", "url", c.item.Link, "error", err)
+				if err := db.RecordQuarantineAttempt(ctx, database, quarantinedArticle, newAttempts, permanent); err != nil {
+					slog.Warn("failed to record quarantine attempt", "url", c.item.Link, "error", err)
 				}
 			}
-			quarantineReasons[c.item.Link] = reason
-			quarantined = append(quarantined, c)
+
+			if permanent {
+				quarantineReasons[c.item.Link] = reason
+				quarantined = append(quarantined, c)
+			}
 			continue
 		}
 
@@ -807,8 +830,15 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 				continue
 			}
 
+			prevAttempts, prevStatus, _ := db.GetQuarantineAttempts(ctx, database, c.item.Link)
+			newAttempts, permanent, skip := evaluateQuarantine(prevAttempts, prevStatus, false)
+			if skip {
+				slog.Debug("candidate already permanently quarantined, skipping", "url", c.item.Link)
+				continue
+			}
+
 			reason := "missing publication date on page"
-			slog.Warn("candidate quarantined: source-date missing",
+			slog.Warn("candidate quarantined immediately: source-date missing",
 				"title", c.item.Title,
 				"source", c.item.SourceName,
 				"url", c.item.Link,
@@ -826,7 +856,7 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 					Status:      db.StatusQuarantined,
 					PublishedAt: c.item.PublishedAt,
 				}
-				if _, err := db.InsertQuarantinedArticle(ctx, database, quarantinedArticle); err != nil {
+				if err := db.RecordQuarantineAttempt(ctx, database, quarantinedArticle, newAttempts, permanent); err != nil {
 					slog.Warn("failed to record quarantined article in database", "url", c.item.Link, "error", err)
 				}
 			}
@@ -858,6 +888,24 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 	}
 
 	return validated, checked, dropped, quarantined, quarantineReasons
+}
+
+// evaluateQuarantine determines whether an article should be quarantined immediately,
+// retried, or skipped if already quarantined.
+// - Transient fetch errors allow up to 3 attempts before permanent quarantine.
+// - HTTP 200 with missing publication date is quarantined immediately (permanent = true).
+// - Already permanently quarantined articles are skipped.
+func evaluateQuarantine(prevAttempts int, prevStatus string, isFetchError bool) (newAttempts int, permanent bool, skip bool) {
+	if prevStatus == db.StatusQuarantined {
+		return prevAttempts, true, true
+	}
+	newAttempts = prevAttempts + 1
+	if !isFetchError {
+		// HTTP 200 with missing date goes to quarantine immediately
+		return newAttempts, true, false
+	}
+	// Transient error: up to 3 attempts before permanent quarantine
+	return newAttempts, newAttempts >= 3, false
 }
 
 func isTrustedDateSource(c candidate, cfg *config.Config) bool {

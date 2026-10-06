@@ -12,6 +12,7 @@ import (
 
 	"github.com/deuswork/nintendoflow/pkg/ai"
 	"github.com/deuswork/nintendoflow/pkg/config"
+	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/fetcher"
 )
 
@@ -422,6 +423,112 @@ func TestPiracyLawsuitDuplicatePairConsideredDuplicate(t *testing.T) {
 	}
 }
 
+func TestQuarantineRetryTransientVsMissingDate(t *testing.T) {
+	// 1. Logic unit test: evaluateQuarantine
+	t.Run("TransientFetchErrorRetriesUpTo3Times", func(t *testing.T) {
+		// Attempt 1: transient error -> retry (not permanent)
+		attempts, perm, skip := evaluateQuarantine(0, "", true)
+		if attempts != 1 || perm || skip {
+			t.Fatalf("attempt 1: expected attempts=1, perm=false, skip=false; got attempts=%d, perm=%v, skip=%v", attempts, perm, skip)
+		}
 
+		// Attempt 2: transient error -> retry (not permanent)
+		attempts, perm, skip = evaluateQuarantine(1, db.StatusQuarantineRetry, true)
+		if attempts != 2 || perm || skip {
+			t.Fatalf("attempt 2: expected attempts=2, perm=false, skip=false; got attempts=%d, perm=%v, skip=%v", attempts, perm, skip)
+		}
 
+		// Attempt 3: transient error -> permanent quarantine!
+		attempts, perm, skip = evaluateQuarantine(2, db.StatusQuarantineRetry, true)
+		if attempts != 3 || !perm || skip {
+			t.Fatalf("attempt 3: expected attempts=3, perm=true, skip=false; got attempts=%d, perm=%v, skip=%v", attempts, perm, skip)
+		}
 
+		// Subsequent runs: already permanently quarantined -> skip
+		_, _, skip = evaluateQuarantine(3, db.StatusQuarantined, true)
+		if !skip {
+			t.Fatalf("expected skip=true for already quarantined article")
+		}
+	})
+
+	t.Run("MissingDateQuarantinedImmediately", func(t *testing.T) {
+		// HTTP 200 with missing date: must quarantine immediately on attempt 1!
+		attempts, perm, skip := evaluateQuarantine(0, "", false)
+		if attempts != 1 || !perm || skip {
+			t.Fatalf("attempt 1: expected attempts=1, perm=true, skip=false; got attempts=%d, perm=%v, skip=%v", attempts, perm, skip)
+		}
+
+		// Subsequent runs: already permanently quarantined -> skip
+		_, _, skip = evaluateQuarantine(1, db.StatusQuarantined, false)
+		if !skip {
+			t.Fatalf("expected skip=true for already quarantined article")
+		}
+	})
+
+	// 2. Integration with validateTopCandidatesFreshness
+	t.Run("TransientHTTP500DoesNotQuarantineOnFirstAttempt", func(t *testing.T) {
+		ts500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer ts500.Close()
+
+		feedDate := time.Now()
+		c := candidate{
+			item: fetcher.Item{
+				Title:      "Transient Server Error News",
+				Link:       ts500.URL,
+				SourceName: "Untrusted Blog",
+				PublishedAt: &feedDate,
+			},
+			score: 100,
+		}
+
+		cfg := &config.Config{RecentTitlesHours: 24}
+		validated, checked, dropped, quarantined, _ := validateTopCandidatesFreshness(context.Background(), []candidate{c}, 24, cfg, nil)
+		if checked != 1 {
+			t.Fatalf("expected 1 checked, got %d", checked)
+		}
+		if len(validated) != 0 {
+			t.Fatalf("expected 0 validated, got %d", len(validated))
+		}
+		if dropped != 0 {
+			t.Fatalf("expected 0 dropped, got %d", dropped)
+		}
+		// Must NOT be in quarantined slice on attempt 1 (so no alert is fired!)
+		if len(quarantined) != 0 {
+			t.Fatalf("expected 0 quarantined on first transient failure, got %d", len(quarantined))
+		}
+	})
+
+	t.Run("HTTP200NoDateQuarantinesImmediately", func(t *testing.T) {
+		ts200 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html><body>Article without publication date</body></html>"))
+		}))
+		defer ts200.Close()
+
+		feedDate := time.Now()
+		c := candidate{
+			item: fetcher.Item{
+				Title:      "No Date Article",
+				Link:       ts200.URL,
+				SourceName: "Untrusted Blog",
+				PublishedAt: &feedDate,
+			},
+			score: 100,
+		}
+
+		cfg := &config.Config{RecentTitlesHours: 24}
+		validated, checked, _, quarantined, _ := validateTopCandidatesFreshness(context.Background(), []candidate{c}, 24, cfg, nil)
+		if checked != 1 {
+			t.Fatalf("expected 1 checked, got %d", checked)
+		}
+		if len(validated) != 0 {
+			t.Fatalf("expected 0 validated, got %d", len(validated))
+		}
+		// MUST be in quarantined slice immediately!
+		if len(quarantined) != 1 {
+			t.Fatalf("expected 1 quarantined immediately for missing date, got %d", len(quarantined))
+		}
+	})
+}
