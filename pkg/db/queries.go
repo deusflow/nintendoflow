@@ -169,8 +169,6 @@ func RecordQuarantineAttempt(ctx context.Context, db *sql.DB, a Article, attempt
 	if permanent {
 		status = StatusQuarantined
 	}
-	a.Status = status
-	a.QuarantineAttempts = attempts
 
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO articles

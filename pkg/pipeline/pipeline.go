@@ -25,8 +25,6 @@ import (
 )
 
 const (
-	maxAICallsPerRun           = 4
-	aiCallDelay                = 20 * time.Second
 	defaultPlaceholdersBaseURL = "https://deusflow.github.io/nintendoflow/assets/placeholders"
 	aggregatorFreshnessHours   = 12
 	mediaFreshnessHours        = 24
