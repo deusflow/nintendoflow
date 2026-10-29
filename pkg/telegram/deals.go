@@ -41,17 +41,16 @@ func FormatDealsDigestHTML(finalDeals []deals.Deal) string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("ℹ️ <i>Ціни вказані для європейського eShop (EUR / €). Для покупок підійдуть європейські карти або коди поповнення.</i>\n\n")
-
-	// Добавим реферальные ссылки Eneba для монетизации
+	// Добавим реферальные ссылки Eneba для монетизации в сворачиваемом блоке Telegram (blockquote expandable)
 	enebaID := os.Getenv("ENEBA_AFFILIATE_ID")
 	if enebaID == "" {
 		enebaID = "deusflow"
 	}
+	sb.WriteString("<blockquote expandable>ℹ️ <i>Ціни вказані для європейського eShop (EUR / €). Для покупок підійдуть європейські карти або коди поповнення.</i>\n\n")
 	sb.WriteString("🔌 <b>Придбати карти поповнення eShop:</b>\n")
 	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-europe-eur?af_id=%s\">Європа (EUR)</a> 🇪🇺\n", enebaID))
 	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-poland-pln?af_id=%s\">Польща (PLN)</a> 🇵🇱\n", enebaID))
-	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-united-states-usd?af_id=%s\">США (USD)</a> 🇺🇸\n", enebaID))
+	sb.WriteString(fmt.Sprintf("• <a href=\"https://www.eneba.com/store/nintendo-gift-card-united-states-usd?af_id=%s\">США (USD)</a> 🇺🇸</blockquote>\n", enebaID))
 
 	return strings.TrimSpace(sb.String())
 }

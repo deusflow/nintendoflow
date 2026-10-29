@@ -1,14 +1,111 @@
 package fetcher
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
+
+type cachedPage struct {
+	finalURL  string
+	body      []byte
+	fetchedAt time.Time
+}
+
+var (
+	pageCacheMu sync.RWMutex
+	pageCache   = make(map[string]cachedPage)
+)
+
+const (
+	pageCacheTTL  = 10 * time.Minute
+	maxHTMLBytes  = 4 << 20 // 4 MB cap for HTML pages
+)
+
+// FetchPageHTML downloads an article page once (unwrapping Google News redirects if needed)
+// and caches the HTTP 200 HTML body in memory so subsequent calls (date check, media extraction,
+// content extraction) reuse the exact same response without hitting the publisher server 3 times.
+func FetchPageHTML(ctx context.Context, rawURL string) (string, []byte, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", nil, fmt.Errorf("empty url")
+	}
+
+	pageCacheMu.RLock()
+	if entry, ok := pageCache[rawURL]; ok && time.Since(entry.fetchedAt) < pageCacheTTL {
+		pageCacheMu.RUnlock()
+		return entry.finalURL, entry.body, nil
+	}
+	pageCacheMu.RUnlock()
+
+	targetURL := rawURL
+	if IsGoogleNewsURL(targetURL) {
+		resolved, err := ResolveGoogleNewsURL(ctx, redirectHTTPClient, targetURL)
+		if err == nil && resolved != "" && !IsGoogleNewsURL(resolved) {
+			targetURL = resolved
+		}
+	}
+
+	pageCacheMu.RLock()
+	if entry, ok := pageCache[targetURL]; ok && time.Since(entry.fetchedAt) < pageCacheTTL {
+		pageCacheMu.RUnlock()
+		return entry.finalURL, entry.body, nil
+	}
+	pageCacheMu.RUnlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return targetURL, nil, fmt.Errorf("build request: %w", err)
+	}
+
+	cfg := NewScraperConfig(15 * time.Second)
+	req = PrepareScraperRequest(req, cfg)
+
+	client := NewScraperClient(cfg)
+	resp, err := client.Do(req)
+	if err != nil {
+		return targetURL, nil, fmt.Errorf("http get: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return targetURL, nil, fmt.Errorf("http status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHTMLBytes))
+	if err != nil {
+		return targetURL, nil, fmt.Errorf("read body: %w", err)
+	}
+
+	finalURL := targetURL
+	if resp.Request != nil && resp.Request.URL != nil && cfg.ScraperAPI == "" {
+		finalURL = resp.Request.URL.String()
+	}
+
+	entry := cachedPage{
+		finalURL:  finalURL,
+		body:      body,
+		fetchedAt: time.Now(),
+	}
+	pageCacheMu.Lock()
+	pageCache[rawURL] = entry
+	pageCache[targetURL] = entry
+	if finalURL != "" {
+		pageCache[finalURL] = entry
+	}
+	pageCacheMu.Unlock()
+
+	return finalURL, body, nil
+}
+
 
 var userAgents = []string{
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",

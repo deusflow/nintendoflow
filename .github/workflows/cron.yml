@@ -18,6 +18,9 @@ jobs:
           go-version-file: '.go-version'
           cache: true
 
+      - name: Install yt-dlp for native Telegram video posts
+        run: pip install --upgrade yt-dlp
+
       - name: Build
         run: go build -o bot ./cmd/bot
 

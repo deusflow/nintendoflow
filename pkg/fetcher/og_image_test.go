@@ -87,3 +87,51 @@ func TestFetchOGImageHTTPError(t *testing.T) {
 		t.Fatal("expected error for non-200 response")
 	}
 }
+
+func TestFetchPreferredMediaYouTubeNoCookieAndLazyIframe(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+			<iframe data-src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"></iframe>
+		</body></html>`))
+	}))
+	defer ts.Close()
+
+	video, _, err := FetchPreferredMedia(context.Background(), ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if video != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		t.Fatalf("expected youtube-nocookie lazy iframe to resolve, got %q", video)
+	}
+}
+
+func TestSinglePassHTMLCacheAvoidsTripleFetch(t *testing.T) {
+	hits := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`<html>
+			<head>
+				<meta property="article:published_time" content="2026-10-29T10:00:00Z">
+				<meta property="og:image" content="https://cdn.example.com/switch2.jpg">
+			</head>
+			<body><article><p>Nintendo Switch 2 receives a major system update today with new features and improvements for all players worldwide.</p></article></body>
+		</html>`))
+	}))
+	defer ts.Close()
+
+	ctx := context.Background()
+	if _, err := FetchSourcePublishedAt(ctx, ts.URL); err != nil {
+		t.Fatalf("FetchSourcePublishedAt error: %v", err)
+	}
+	if _, _, err := FetchPreferredMedia(ctx, ts.URL); err != nil {
+		t.Fatalf("FetchPreferredMedia error: %v", err)
+	}
+	if _, err := FetchArticleContent(ctx, ts.URL); err != nil {
+		t.Fatalf("FetchArticleContent error: %v", err)
+	}
+
+	if hits != 1 {
+		t.Fatalf("expected server to be fetched only 1 time across all 3 stages, got %d hits", hits)
+	}
+}
+

@@ -157,6 +157,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 		if entry.Image != nil {
 			imgURL = entry.Image.URL
 		}
+		vidURL := ExtractYouTubeFromHTML(entry.Content+" "+entry.Description, link)
 
 		var pub *time.Time
 		if entry.PublishedParsed != nil {
@@ -170,6 +171,7 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 			Title:          entry.Title,
 			Link:           link,
 			Description:    entry.Description,
+			VideoURL:       vidURL,
 			ImageURL:       imgURL,
 			PublishedAt:    pub,
 			SourceName:     f.Name,

@@ -3,12 +3,16 @@ package deals
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+
+	"github.com/deuswork/nintendoflow/pkg/ai"
 )
 
 const (
@@ -200,4 +204,88 @@ func normalizeTitle(title string) string {
 	}
 	return sb.String()
 }
+
+// TranslateDealsQuotesUA uses a single AI call to turn raw English Reddit quotes
+// and deal details into witty 1-sentence Ukrainian game-blogger blurbs.
+// If AI is unavailable or fails, it falls back to clean Ukrainian blurbs so raw English never leaks.
+func TranslateDealsQuotesUA(ctx context.Context, manager *ai.Manager, list []Deal) {
+	if len(list) == 0 {
+		return
+	}
+
+	if manager != nil {
+		var sb strings.Builder
+		sb.WriteString(`Ти — іронічний український геймблогер Nintendo-каналу DEUSFLOW.
+Для кожної гри зі списку нижче переклади/адаптуй англійський відгук з Reddit (або напиши свій влучний 1-речення коментар про гру та її знижку) живою українською мовою з легким геймерським гумором.
+Вимоги:
+- Рівно 1 коротке речення на гру (до 95 символів).
+- Тільки українською мовою, без лапок, без HTML і без англійських фраз.
+- Поверни ТІЛЬКИ валідний JSON-масив рядків тієї ж довжини, що й список ігор: ["коментар 1", "коментар 2", ...]
+
+Список ігор:
+`)
+		for i, d := range list {
+			fmt.Fprintf(&sb, "%d. %s (-%d%%, %.2f%s) | Reddit: %s\n", i+1, d.Title, d.Cut, d.NewPrice, d.Currency, d.RedditQuote)
+		}
+
+		raw, err := manager.Generate(ctx, sb.String())
+		if err != nil {
+			slog.Warn("AI deal quotes translation failed, using Ukrainian fallbacks", "error", err)
+		} else {
+			start := strings.Index(raw, "[")
+			end := strings.LastIndex(raw, "]")
+			if start != -1 && end != -1 && end > start {
+				var translated []string
+				if err := json.Unmarshal([]byte(raw[start:end+1]), &translated); err == nil {
+					for i := 0; i < len(list) && i < len(translated); i++ {
+						clean := strings.TrimSpace(translated[i])
+						if clean != "" && containsCyrillic(clean) {
+							list[i].RedditQuote = clean
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Ensure no raw English Reddit quotes remain if AI was nil or skipped an item.
+	for i := range list {
+		if !containsCyrillic(list[i].RedditQuote) {
+			list[i].RedditQuote = fallbackUkrainianDealBlurb(list[i], i)
+		}
+	}
+}
+
+func containsCyrillic(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Cyrillic, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func fallbackUkrainianDealBlurb(d Deal, idx int) string {
+	switch {
+	case d.Cut >= 75:
+		variants := []string{
+			"Знижка така жирна, що гріх не забрати у свій вічний беклог!",
+			"Майже задарма в eShop — за таку ціну треба брати не думаючи.",
+		}
+		return variants[idx%len(variants)]
+	case d.Cut >= 50:
+		variants := []string{
+			"Мінус пів ціни за годноту — гаманець каже «дякую»!",
+			"Солідний цінопад у eShop, якраз час зацінити на Switch.",
+		}
+		return variants[idx%len(variants)]
+	default:
+		variants := []string{
+			"Приємна знижка в Nintendo eShop для вечірніх забігів.",
+			"Хороший привід нарешті додати гру до своєї бібліотеки.",
+		}
+		return variants[idx%len(variants)]
+	}
+}
+
 

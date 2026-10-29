@@ -24,7 +24,7 @@ type Manager struct {
 	delay              time.Duration
 	callsUsed          int
 	retriesUsed        int
-	lastCallFinishedAt time.Time
+	lastCallByProvider map[string]time.Time
 	lastProvider       string
 }
 
@@ -33,9 +33,10 @@ func NewManager(providers []AIProvider, maxCalls int, delay time.Duration) *Mana
 	copied := make([]AIProvider, len(providers))
 	copy(copied, providers)
 	return &Manager{
-		providers: copied,
-		maxCalls:  maxCalls,
-		delay:     delay,
+		providers:          copied,
+		maxCalls:           maxCalls,
+		delay:              delay,
+		lastCallByProvider: make(map[string]time.Time),
 	}
 }
 
@@ -122,23 +123,30 @@ func (m *Manager) generateWithProvider(ctx context.Context, provider AIProvider,
 }
 
 func (m *Manager) callProvider(ctx context.Context, provider AIProvider, prompt string) (string, error) {
-	if err := m.waitBetweenCalls(ctx); err != nil {
+	if err := m.waitBetweenCalls(ctx, provider.Name()); err != nil {
 		return "", err
 	}
 
 	text, err := provider.Complete(ctx, prompt)
-	m.lastCallFinishedAt = time.Now()
+	if m.lastCallByProvider == nil {
+		m.lastCallByProvider = make(map[string]time.Time)
+	}
+	m.lastCallByProvider[provider.Name()] = time.Now()
 	if err != nil {
 		return "", err
 	}
 	return text, nil
 }
 
-func (m *Manager) waitBetweenCalls(ctx context.Context) error {
-	if m.lastCallFinishedAt.IsZero() || m.delay <= 0 {
+func (m *Manager) waitBetweenCalls(ctx context.Context, providerName string) error {
+	if m.delay <= 0 || m.lastCallByProvider == nil {
 		return nil
 	}
-	remaining := time.Until(m.lastCallFinishedAt.Add(m.delay))
+	lastCall := m.lastCallByProvider[providerName]
+	if lastCall.IsZero() {
+		return nil
+	}
+	remaining := time.Until(lastCall.Add(m.delay))
 	if remaining <= 0 {
 		return nil
 	}

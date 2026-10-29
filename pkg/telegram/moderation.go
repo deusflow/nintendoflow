@@ -1,15 +1,30 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+var (
+	previewVideoCacheMu  sync.RWMutex
+	previewVideoURLCache = make(map[int]string)
+)
+
+// GetCachedPreviewVideoURL returns the encoded "tgfile:<file_id>|<url>" string if SendModerationPreview
+// successfully uploaded a native video to Telegram for the given articleID.
+func GetCachedPreviewVideoURL(articleID int) string {
+	previewVideoCacheMu.RLock()
+	defer previewVideoCacheMu.RUnlock()
+	return previewVideoURLCache[articleID]
+}
 
 const (
 	ModerationActionPubTG   = "pub_tg"
@@ -27,40 +42,100 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 		return 0, err
 	}
 
+	existingFileID, cleanVideoURL := SplitCachedVideoURL(article.VideoURL)
+
 	// 1. Send TG Preview
 	tgText := buildTGPreviewText(article)
 	tgMarkup := moderationTGKeyboard(article)
 
-	previewImage := strings.TrimSpace(article.ImageURL)
-	if previewImage == "" && strings.TrimSpace(article.VideoURL) == "" {
-		previewImage = getFallbackImageURL(article.ArticleType)
-	} else if previewImage == "" {
-		previewImage = youtubeThumbnailURL(article.VideoURL)
+	videoPreviewSent := false
+	if cleanVideoURL != "" {
+		baseChat := tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel}
+		caption := fmt.Sprintf("<b>Preview Telegram (Native Video)</b>\n🎬 %s", escapeHTML(article.TitleRaw))
+
+		if existingFileID != "" {
+			vidCfg := tgbotapi.VideoConfig{
+				BaseFile: tgbotapi.BaseFile{
+					BaseChat: baseChat,
+					File:     tgbotapi.FileID(existingFileID),
+				},
+				Caption:           caption,
+				ParseMode:         "HTML",
+				SupportsStreaming: true,
+			}
+			if _, sendErr := bot.Send(vidCfg); sendErr == nil {
+				videoPreviewSent = true
+			}
+		} else if strings.Contains(cleanVideoURL, "youtube") || strings.Contains(cleanVideoURL, "youtu.be") {
+			if stream, size, dlErr := getYouTubeStream(context.Background(), cleanVideoURL); dlErr == nil {
+				if size < 49*1024*1024 {
+					vidCfg := tgbotapi.VideoConfig{
+						BaseFile: tgbotapi.BaseFile{
+							BaseChat: baseChat,
+							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
+						},
+						Caption:           caption,
+						ParseMode:         "HTML",
+						SupportsStreaming: true,
+					}
+					sentVid, sendErr := bot.Send(vidCfg)
+					_ = stream.Close()
+					if sendErr == nil {
+						videoPreviewSent = true
+						if sentVid.Video != nil && sentVid.Video.FileID != "" {
+							encoded := EncodeCachedVideoURL(sentVid.Video.FileID, cleanVideoURL)
+							previewVideoCacheMu.Lock()
+							previewVideoURLCache[article.ID] = encoded
+							previewVideoCacheMu.Unlock()
+							slog.Info("telegram preview native video uploaded and file_id cached",
+								"article_id", article.ID,
+								"file_id", sentVid.Video.FileID,
+							)
+						}
+					} else {
+						slog.Warn("telegram preview video upload failed, fallback to thumbnail", "article_id", article.ID, "error", sendErr)
+					}
+				} else {
+					_ = stream.Close()
+				}
+			} else {
+				slog.Warn("telegram preview video download failed, fallback to thumbnail", "article_id", article.ID, "error", dlErr)
+			}
+		}
 	}
 
-	if previewImage != "" {
-		photo := tgbotapi.PhotoConfig{
-			BaseFile: tgbotapi.BaseFile{
-				BaseChat: tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel},
-				File:     tgbotapi.FileURL(previewImage),
-			},
-			Caption:   fmt.Sprintf("<b>Preview Telegram</b>\nPhoto attached for: %s", escapeHTML(article.TitleRaw)),
-			ParseMode: "HTML",
+	if !videoPreviewSent {
+		previewImage := strings.TrimSpace(article.ImageURL)
+		if previewImage == "" && cleanVideoURL == "" {
+			previewImage = getFallbackImageURL(article.ArticleType)
+		} else if previewImage == "" {
+			previewImage = youtubeThumbnailURL(cleanVideoURL)
 		}
-		// Send photo without markup to avoid caption limits
-		_, sendErr := bot.Send(photo)
-		if sendErr != nil {
-			slog.Warn("telegram preview media send failed",
-				"mode", "preview",
-				"step", "send_photo",
-				"article_id", article.ID,
-				"error", sendErr,
-			)
+
+		if previewImage != "" {
+			photo := tgbotapi.PhotoConfig{
+				BaseFile: tgbotapi.BaseFile{
+					BaseChat: tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel},
+					File:     tgbotapi.FileURL(previewImage),
+				},
+				Caption:   fmt.Sprintf("<b>Preview Telegram</b>\nPhoto attached for: %s", escapeHTML(article.TitleRaw)),
+				ParseMode: "HTML",
+			}
+			// Send photo without markup to avoid caption limits
+			_, sendErr := bot.Send(photo)
+			if sendErr != nil {
+				slog.Warn("telegram preview media send failed",
+					"mode", "preview",
+					"step", "send_photo",
+					"article_id", article.ID,
+					"error", sendErr,
+				)
+			}
 		}
 	}
 
-	if strings.TrimSpace(article.VideoURL) != "" {
-		tgText = fmt.Sprintf("%s\n\n🔗 %s", tgText, strings.TrimSpace(article.VideoURL))
+	if cleanVideoURL != "" {
+		tgText = fmt.Sprintf("%s\n\n🔗 %s", tgText, cleanVideoURL)
 	}
 
 	tgMsg, err := newTextMessage(chatID, tgText)

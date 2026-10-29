@@ -111,3 +111,30 @@ func TestGenerateBudgetCountsOnlyGenerateCalls(t *testing.T) {
 		t.Fatalf("expected retriesUsed=1, got %d", m.RetriesUsed())
 	}
 }
+
+func TestFallbackToAnotherProviderDoesNotSleepDelay(t *testing.T) {
+	first := &mockProvider{
+		name:      "gemini",
+		responses: []mockResponse{{err: errors.New("http 500 server error")}},
+	}
+	second := &mockProvider{
+		name:      "groq",
+		responses: []mockResponse{{text: "fast-fallback"}},
+	}
+
+	// Set a large delay (5s); switching from failed gemini to groq must be instant (<200ms).
+	m := NewManager([]AIProvider{first, second}, 2, 5*time.Second)
+	start := time.Now()
+	got, err := m.Generate(context.Background(), "prompt")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	if got != "fast-fallback" {
+		t.Fatalf("unexpected result: %q", got)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("expected instant fallback to different provider, took %v", elapsed)
+	}
+}
+

@@ -81,4 +81,35 @@ func TestGetClientIP(t *testing.T) {
 	if got := getClientIP(r4); got != "127.0.0.1" {
 		t.Errorf("getClientIP(r4) = %q, want %q", got, "127.0.0.1")
 	}
+
+	// Spoofing protection: attacker prepends Telegram IP, edge proxy appends attacker's public IP
+	r5, _ := http.NewRequest("POST", "/", nil)
+	r5.Header.Set("X-Forwarded-For", "149.154.160.5, 8.8.8.8")
+	if got := getClientIP(r5); got != "8.8.8.8" {
+		t.Errorf("getClientIP(r5) = %q, want %q (spoofed first IP must be ignored)", got, "8.8.8.8")
+	}
+
+	// Vercel header takes precedence
+	r6, _ := http.NewRequest("POST", "/", nil)
+	r6.Header.Set("X-Forwarded-For", "149.154.160.5")
+	r6.Header.Set("X-Vercel-Forwarded-For", "91.108.4.22")
+	if got := getClientIP(r6); got != "91.108.4.22" {
+		t.Errorf("getClientIP(r6) = %q, want %q", got, "91.108.4.22")
+	}
 }
+
+func TestIsAuthorizedAdmin(t *testing.T) {
+	t.Setenv("ADMIN_CHAT_ID", "-100999888777")
+	t.Setenv("TEST_ADMIN_CHAT_ID", "123456789")
+
+	if !isAuthorizedAdmin(-100999888777, 555) {
+		t.Error("expected matching ADMIN_CHAT_ID to be authorized")
+	}
+	if !isAuthorizedAdmin(-100111, 123456789) {
+		t.Error("expected matching TEST_ADMIN_CHAT_ID user to be authorized")
+	}
+	if isAuthorizedAdmin(-100111, 999999) {
+		t.Error("expected unknown chat and user to be rejected")
+	}
+}
+

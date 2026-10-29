@@ -38,7 +38,7 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 			if word == "" {
 				continue
 			}
-			if strings.Contains(text, word) {
+			if containsKeyword(text, word) {
 				effective := kw.Weight * priority / 100
 				result.Score += effective
 				result.MatchedTopics[topicName] = true
@@ -89,3 +89,44 @@ func ShouldPost(title, body string, topics map[string]config.Topic, minScore int
 	}
 	return result, true, "accepted"
 }
+
+func isWordByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+}
+
+// containsKeyword checks if word appears in text with proper word boundaries
+// so short acronyms like "nes" or "nso" never match inside "business", "wednesday", or "johnson".
+// Words of 4+ chars also match simple plural suffixes ("s", "es").
+func containsKeyword(text, word string) bool {
+	if word == "" || len(text) < len(word) {
+		return false
+	}
+	offset := 0
+	for offset <= len(text)-len(word) {
+		idx := strings.Index(text[offset:], word)
+		if idx == -1 {
+			return false
+		}
+		pos := offset + idx
+		end := pos + len(word)
+
+		leftOK := pos == 0 || !isWordByte(text[pos-1])
+		if leftOK {
+			if end == len(text) || !isWordByte(text[end]) {
+				return true
+			}
+			// Allow simple English plural (-s / -es) for keywords of 4+ characters
+			if len(word) >= 4 {
+				if text[end] == 's' && (end+1 == len(text) || !isWordByte(text[end+1])) {
+					return true
+				}
+				if strings.HasPrefix(text[end:], "es") && (end+2 == len(text) || !isWordByte(text[end+2])) {
+					return true
+				}
+			}
+		}
+		offset = pos + 1
+	}
+	return false
+}
+

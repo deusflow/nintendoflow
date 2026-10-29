@@ -395,6 +395,12 @@ func UpdateBodyUAOnly(ctx context.Context, db *sql.DB, id int, bodyUA string) er
 	return err
 }
 
+// UpdateVideoURL updates video_url (e.g. with cached Telegram file_id).
+func UpdateVideoURL(ctx context.Context, db *sql.DB, id int, videoURL string) error {
+	_, err := db.ExecContext(ctx, `UPDATE articles SET video_url=$1 WHERE id=$2`, nullStr(videoURL), id)
+	return err
+}
+
 // MarkPostedTG sets posted_tg = true and saves the tg_message_id.
 func MarkPostedTG(ctx context.Context, db *sql.DB, id int, tgMessageID int) error {
 	_, err := db.ExecContext(ctx, `UPDATE articles SET posted_tg=TRUE, tg_message_id=$2 WHERE id=$1`, id, tgMessageID)
@@ -407,9 +413,9 @@ func MarkPostedThreads(ctx context.Context, db *sql.DB, id int) error {
 	return err
 }
 
-// Cleanup deletes articles older than 30 days.
+// Cleanup deletes articles older than 30 days, preserving highlight masterpieces forever so they are never repeated.
 func Cleanup(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM articles WHERE created_at < NOW() - INTERVAL '30 days'`)
+	_, err := db.ExecContext(ctx, `DELETE FROM articles WHERE created_at < NOW() - INTERVAL '30 days' AND COALESCE(source_type, '') <> 'highlight'`)
 	return err
 }
 
@@ -614,7 +620,7 @@ func FetchRecentlyHighlightedGames(ctx context.Context, db *sql.DB) ([]string, e
 	rows, err := db.QueryContext(ctx, `
 		SELECT title_raw 
 		FROM articles 
-		WHERE source_type = 'highlight' 
+		WHERE source_type = 'highlight' OR source_name = 'Nintendo Masterpiece'
 		ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err

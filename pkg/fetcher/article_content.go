@@ -1,11 +1,10 @@
 package fetcher
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
@@ -21,25 +20,12 @@ const (
 // <p> tags, and finally to the meta description.
 // The returned text is trimmed to articleContentMaxChars runes.
 func FetchArticleContent(ctx context.Context, rawURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	_, raw, err := FetchPageHTML(ctx, rawURL)
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
-	}
-	cfg := NewScraperConfig(15 * time.Second)
-	req = PrepareScraperRequest(req, cfg)
-
-	client := NewScraperClient(cfg)
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("http get: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http status %d", resp.StatusCode)
+		return "", err
 	}
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(raw))
 	if err != nil {
 		return "", fmt.Errorf("parse html: %w", err)
 	}

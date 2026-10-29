@@ -192,3 +192,37 @@ func TestShouldPostLowTechScoreStillNeedsAnchorOnStrictFeed(t *testing.T) {
 		t.Fatalf("expected missing_nintendo_anchor, got %s", reason)
 	}
 }
+
+func TestShortKeywordsDoNotMatchInsideOtherWords(t *testing.T) {
+	topics := map[string]config.Topic{
+		"retro": {
+			Enabled:  true,
+			Priority: 100,
+			Keywords: []config.Keyword{
+				{Word: "nes", Role: "anchor", Weight: 30},
+				{Word: "nso", Role: "anchor", Weight: 30},
+			},
+		},
+	}
+
+	// "business", "wednesday", "witness", "johnson", "sponsor" must NOT trigger "nes" or "nso"
+	resFalse := Evaluate(
+		"Wednesday business report by Johnson",
+		"Witnesses and sponsors discussed general industry trends.",
+		topics,
+	)
+	if resFalse.Score != 0 || resFalse.HasAnchor {
+		t.Fatalf("expected 0 score and no anchor for substring false positives, got score=%d anchor=%v", resFalse.Score, resFalse.HasAnchor)
+	}
+
+	// Exact standalone acronyms MUST match
+	resTrue := Evaluate(
+		"New NES games added to NSO library",
+		"Classic titles arrive this week.",
+		topics,
+	)
+	if resTrue.Score != 60 || !resTrue.HasAnchor {
+		t.Fatalf("expected score=60 and anchor=true for standalone NES and NSO, got score=%d anchor=%v", resTrue.Score, resTrue.HasAnchor)
+	}
+}
+

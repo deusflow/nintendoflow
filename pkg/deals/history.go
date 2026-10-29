@@ -3,6 +3,8 @@ package deals
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -38,3 +40,36 @@ func MarkDealPublished(ctx context.Context, db *sql.DB, d Deal) error {
 		d.ID, d.Title, d.OldPrice, d.NewPrice, d.Currency, region, d.Cut, d.Metacritic, d.URL, d.Source, d.RedditQuote)
 	return err
 }
+
+// EncodeDealsMetadata serializes deals into a compact JSON string for storing in article.EventTag
+// while the deals digest is pending moderation.
+func EncodeDealsMetadata(list []Deal) string {
+	if len(list) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return ""
+	}
+	return "deals_json:" + string(raw)
+}
+
+// MarkDealsPublishedFromMetadata decodes pending deals metadata and marks each deal as published in deal_history.
+func MarkDealsPublishedFromMetadata(ctx context.Context, db *sql.DB, metadata string) error {
+	metadata = strings.TrimSpace(metadata)
+	if !strings.HasPrefix(metadata, "deals_json:") {
+		return nil
+	}
+	raw := strings.TrimPrefix(metadata, "deals_json:")
+	var list []Deal
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return err
+	}
+	for _, d := range list {
+		if err := MarkDealPublished(ctx, db, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+

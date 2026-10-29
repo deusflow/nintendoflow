@@ -291,12 +291,16 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	selected := topCandidates[selectedIdx]
 
 	// Step 6.5: fetch preferred media only for the single winning article.
+	rssVideoURL := selected.item.VideoURL
 	selected.item.VideoURL = ""
 	selected.item.ImageURL = ""
 	imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
 	videoURL, imageURL, imageErr := fetcher.FetchPreferredMedia(imageCtx, selected.item.Link)
 	imageCancel()
-	if imageErr != nil {
+	if videoURL == "" && rssVideoURL != "" {
+		videoURL = rssVideoURL
+	}
+	if imageErr != nil && videoURL == "" {
 		slog.Warn("media fetch failed, fallback to no media", "url", selected.item.Link, "error", imageErr)
 	} else if videoURL != "" {
 		selected.item.VideoURL = videoURL
@@ -399,6 +403,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		ArticleType: articleType,
 		Score:       selected.score,
 		Status:      db.StatusPending,
+		EventTag:    selected.eventTag,
 		PublishedAt: selected.item.PublishedAt,
 	}
 
@@ -482,6 +487,13 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		return
 	}
 
+	if cachedVid := telegram.GetCachedPreviewVideoURL(article.ID); cachedVid != "" {
+		if err := db.UpdateVideoURL(ctx, database, article.ID, cachedVid); err != nil {
+			slog.Warn("failed to cache telegram video file_id in db", "article_id", article.ID, "error", err)
+		}
+	}
+
+	posted = true
 	slog.Info("moderation preview sent",
 		"article_id", article.ID,
 		"preview_chat_id", previewChatID,
@@ -587,6 +599,8 @@ func sanitizeGeneratedBody(body string) string {
 	for _, re := range emptyQuestionPatterns {
 		clean = re.ReplaceAllString(clean, "")
 	}
+	clean = strings.ReplaceAll(clean, "\n — ", "\n")
+	clean = strings.ReplaceAll(clean, "  ", " ")
 	clean = strings.ReplaceAll(clean, " .", ".")
 	clean = excessiveNewlinesRe.ReplaceAllString(clean, "\n\n")
 	return strings.TrimSpace(clean)

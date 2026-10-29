@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,9 +10,11 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"github.com/deuswork/nintendoflow/pkg/ai"
 	"github.com/deuswork/nintendoflow/pkg/config"
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/deals"
+	"github.com/deuswork/nintendoflow/pkg/dedup"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
 )
 
@@ -68,6 +71,18 @@ func main() {
 		slog.Info("deal", "title", d.Title, "cut", d.Cut, "meta", d.Metacritic, "price", d.NewPrice)
 	}
 
+	aiConfigPath := os.Getenv("AI_CONFIG_PATH")
+	if aiConfigPath == "" {
+		aiConfigPath = "ai_config.json"
+	}
+	var aiManager *ai.Manager
+	if providers, aiErr := ai.BuildProvidersFromConfig(ctx, aiConfigPath); aiErr != nil {
+		slog.Warn("AI router unavailable for deals quotes, using Ukrainian fallback blurbs", "error", aiErr)
+	} else {
+		aiManager = ai.NewManager(providers, 2, 10*time.Second)
+	}
+	deals.TranslateDealsQuotesUA(ctx, aiManager, finalDeals)
+
 	// -- 4. Determine bot token and chat --
 	var botToken, chatID string
 	if cfg.TestModerationMode {
@@ -95,15 +110,22 @@ func main() {
 	}
 
 	if cfg.TestModerationMode {
-		// Create a dummy article to leverage the existing moderation pipeline
+		// Create a pending article to leverage the existing moderation pipeline.
+		// Deals are encoded in EventTag and marked in deal_history only upon admin approval in webhook.
 		htmlBody := telegram.FormatDealsDigestHTML(finalDeals)
+		sourceURL := fmt.Sprintf("https://www.nintendo.com/deals/%s", runStart.UTC().Format("20060102-150405"))
 		article := db.Article{
+			SourceURL:   sourceURL,
+			URLHash:     dedup.HashURL(sourceURL),
+			TitleHash:   dedup.HashTitle("Nintendo eShop Deals " + runStart.UTC().Format("2006-01-02")),
+			ContentHash: dedup.HashTitle(htmlBody),
 			TitleRaw:    "Nintendo eShop Deals",
 			BodyUA:      htmlBody,
 			SourceType:  "deals",
 			ArticleType: "deals",
 			SourceName:  "Nintendo eShop",
 			Status:      db.StatusPending,
+			EventTag:    deals.EncodeDealsMetadata(finalDeals),
 			PublishedAt: &runStart,
 		}
 
@@ -124,14 +146,7 @@ func main() {
 			slog.Error("send deals moderation preview failed", "error", err)
 			return
 		}
-		slog.Info("deals moderation preview sent", "article_id", article.ID, "msg_id", previewMessageID)
-
-		// Mark deals in history so the next run selects fresh games
-		for _, d := range finalDeals {
-			if err := deals.MarkDealPublished(ctx, database, d); err != nil {
-				slog.Warn("failed to mark deal as published", "deal", d.Title, "error", err)
-			}
-		}
+		slog.Info("deals moderation preview sent (will mark in history upon approval)", "article_id", article.ID, "msg_id", previewMessageID)
 	} else {
 		if err := telegram.PostDealsDigest(bot, chatID, finalDeals); err != nil {
 			slog.Error("telegram deals post failed", "error", err)

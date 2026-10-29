@@ -27,7 +27,7 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 		return 0, fmt.Errorf("invalid channel/chat id %q: %w", channelID, err)
 	}
 
-	videoURL := strings.TrimSpace(article.VideoURL)
+	cachedFileID, videoURL := SplitCachedVideoURL(strings.TrimSpace(article.VideoURL))
 	imageURL := strings.TrimSpace(article.ImageURL)
 	sourceURL := strings.TrimSpace(article.SourceURL)
 
@@ -57,7 +57,28 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 	}
 
 	// --- SCENARIO A: WE HAVE A VIDEO ---
-	if videoURL != "" {
+	if cachedFileID != "" || videoURL != "" {
+		// 0. Fast-path: use pre-uploaded Telegram file_id cached during moderation preview
+		if cachedFileID != "" {
+			video := tgbotapi.VideoConfig{
+				BaseFile: tgbotapi.BaseFile{
+					BaseChat: baseChat,
+					File:     tgbotapi.FileID(cachedFileID),
+				},
+				Caption:           buildCaption(&article, 1024),
+				ParseMode:         "HTML",
+				SupportsStreaming: true,
+			}
+			if markup != nil {
+				video.ReplyMarkup = markup
+			}
+			if sentMsg, errSend := bot.Send(video); errSend == nil {
+				return sentMsg.MessageID, nil
+			} else {
+				slog.Warn("cached video file_id send failed, falling back to stream", "article_id", article.ID, "error", errSend)
+			}
+		}
+
 		// 1. Try to send as actual Native Video
 		if strings.Contains(videoURL, "youtube.com") || strings.Contains(videoURL, "youtu.be") {
 			// Try to download and stream to Telegram
@@ -70,8 +91,9 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 							BaseChat: baseChat,
 							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
 						},
-						Caption:   buildCaption(&article, 1024),
-						ParseMode: "HTML",
+						Caption:           buildCaption(&article, 1024),
+						ParseMode:         "HTML",
+						SupportsStreaming: true,
 					}
 					if markup != nil {
 						video.ReplyMarkup = markup
@@ -105,15 +127,16 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 				}
 				slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 			}
-		} else {
+		} else if videoURL != "" {
 			// Non-youtube video (direct remote URL mp4)
 			video := tgbotapi.VideoConfig{
 				BaseFile: tgbotapi.BaseFile{
 					BaseChat: baseChat,
 					File:     tgbotapi.FileURL(videoURL),
 				},
-				Caption:   buildCaption(&article, 1024),
-				ParseMode: "HTML",
+				Caption:           buildCaption(&article, 1024),
+				ParseMode:         "HTML",
+				SupportsStreaming: true,
 			}
 			if markup != nil {
 				video.ReplyMarkup = markup
@@ -301,6 +324,13 @@ func buildCaption(article *db.Article, maxLen int) string {
 	body := stripSourceFooter(article.BodyUA)
 	full := prefix + body
 
+	const channelSignature = `<a href="https://t.me/deusflow">DEUSFLOW</a> 🎮 <a href="https://t.me/deusflow">Твоя Nintendo Спільнота</a>`
+	sigReserve := len([]rune(channelSignature)) + 4
+	if maxLen > sigReserve+100 && !strings.Contains(full, "t.me/deusflow") {
+		truncated := safeTruncateHTML(full, maxLen-sigReserve)
+		return truncated + "\n\n" + channelSignature
+	}
+
 	return safeTruncateHTML(full, maxLen)
 }
 
@@ -328,9 +358,10 @@ func safeTruncateHTML(s string, maxLen int) string {
 
 	truncated = strings.TrimRight(truncated, " \t\n\r") + "..."
 
-	// Track unclosed tags and append closing tags in reverse order
+	// Track unclosed tags (including hyphenated tags like tg-spoiler and attributes like blockquote expandable)
+	// and append closing tags in reverse order.
 	var openTags []string
-	tagRe := regexp.MustCompile(`</?([a-zA-Z0-9]+)[^>]*>`)
+	tagRe := regexp.MustCompile(`</?([a-zA-Z0-9-]+)[^>]*>`)
 	matches := tagRe.FindAllStringSubmatch(truncated, -1)
 	for _, m := range matches {
 		fullTag := m[0]

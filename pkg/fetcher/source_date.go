@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,36 +22,9 @@ var (
 // If the given sourceURL is a Google News URL, it resolves it to the destination
 // publisher site first.
 func FetchSourcePublishedAt(ctx context.Context, sourceURL string) (*time.Time, error) {
-	targetURL := sourceURL
-	if IsGoogleNewsURL(targetURL) {
-		resolved, err := ResolveGoogleNewsURL(ctx, redirectHTTPClient, targetURL)
-		if err == nil && resolved != "" && !IsGoogleNewsURL(resolved) {
-			targetURL = resolved
-		}
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	_, raw, err := FetchPageHTML(ctx, sourceURL)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-
-	cfg := NewScraperConfig(15 * time.Second)
-	req = PrepareScraperRequest(req, cfg)
-
-	client := NewScraperClient(cfg)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http get: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http status %d", resp.StatusCode)
-	}
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return nil, err
 	}
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(raw))
 	if err != nil {

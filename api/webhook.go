@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/deuswork/nintendoflow/pkg/db"
+	"github.com/deuswork/nintendoflow/pkg/deals"
 	"github.com/deuswork/nintendoflow/pkg/telegram"
 	"github.com/deuswork/nintendoflow/pkg/threads"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -83,23 +84,77 @@ func isTelegramIP(ipStr string) bool {
 	return false
 }
 
-func getClientIP(r *http.Request) string {
-	rawIP := ""
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		// Can contain multiple IPs, the first one is the client
-		ips := strings.Split(ip, ",")
-		rawIP = strings.TrimSpace(ips[0])
-	} else if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		rawIP = strings.TrimSpace(ip)
-	} else {
-		rawIP = r.RemoteAddr
-	}
-
-	// Strip port if present (handles both "1.2.3.4:5678" and "[2001:...]:5678")
-	if host, _, err := net.SplitHostPort(rawIP); err == nil {
+func stripIPPort(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if host, _, err := net.SplitHostPort(raw); err == nil {
 		return host
 	}
-	return strings.Trim(rawIP, "[]")
+	return strings.Trim(raw, "[]")
+}
+
+func isPrivateOrLocalIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
+}
+
+func getClientIP(r *http.Request) string {
+	// 1. Prefer Vercel's non-spoofable platform header if present
+	if vercelIP := strings.TrimSpace(r.Header.Get("X-Vercel-Forwarded-For")); vercelIP != "" {
+		parts := strings.Split(vercelIP, ",")
+		return stripIPPort(parts[len(parts)-1])
+	}
+
+	// 2. Walk X-Forwarded-For from right to left (closest hop to server),
+	// skipping internal private/loopback proxy hops so client-prepended spoofed IPs are ignored.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		for i := len(ips) - 1; i >= 0; i-- {
+			candidate := stripIPPort(ips[i])
+			if candidate == "" {
+				continue
+			}
+			if i > 0 && isPrivateOrLocalIP(candidate) {
+				continue
+			}
+			return candidate
+		}
+	}
+
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return stripIPPort(ip)
+	}
+
+	return stripIPPort(r.RemoteAddr)
+}
+
+func isAuthorizedAdmin(chatID, userID int64) bool {
+	var allowedRaw []string
+	if v := strings.TrimSpace(os.Getenv("ADMIN_CHAT_ID")); v != "" {
+		allowedRaw = append(allowedRaw, strings.Split(v, ",")...)
+	}
+	if v := strings.TrimSpace(os.Getenv("TEST_ADMIN_CHAT_ID")); v != "" {
+		allowedRaw = append(allowedRaw, strings.Split(v, ",")...)
+	}
+	if len(allowedRaw) == 0 {
+		// No explicit admin restriction configured in environment
+		return true
+	}
+
+	for _, raw := range allowedRaw {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			if chatID == id || userID == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func Handler(w http.ResponseWriter, r *http.Request) {
@@ -265,6 +320,25 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 		return fmt.Errorf("bot api init: %w", err)
 	}
 
+	var cbChatID int64
+	if cb.Message != nil {
+		cbChatID = cb.Message.Chat.ID
+	}
+	var cbUserID int64
+	if cb.From != nil {
+		cbUserID = int64(cb.From.ID)
+	}
+	if !isAuthorizedAdmin(cbChatID, cbUserID) {
+		slog.Warn("handleCallback: unauthorized moderation attempt",
+			"chat_id", cbChatID,
+			"user_id", cbUserID,
+			"action", action,
+			"article_id", articleID,
+		)
+		answerCallbackAlert(bot, cb.ID, "⛔ Доступ заборонено: тільки для адміністратора каналу.")
+		return nil
+	}
+
 	switch action {
 	case "pub_tg":
 		slog.Info("handleCallback: publishing article to TG", "article_id", articleID)
@@ -409,6 +483,14 @@ func handleEditMessage(parent context.Context, message *tgbotapi.Message) error 
 	msgID := message.MessageID
 	text := strings.TrimSpace(message.Text)
 	text = sanitizeEditedBody(text)
+
+	if !isAuthorizedAdmin(chatID, userID) {
+		slog.Warn("handleEditMessage: unauthorized edit message ignored",
+			"chat_id", chatID,
+			"user_id", userID,
+		)
+		return nil
+	}
 
 	slog.Info("handleEditMessage: processing text message",
 		"chat_id", chatID,
@@ -682,6 +764,14 @@ func publishPendingArticleTG(ctx context.Context, database *sql.DB, bot *tgbotap
 	
 	if err := db.UpdateArticleStatus(ctx, database, articleID, db.StatusPublished); err != nil {
 		slog.Warn("failed to update article status to published", "article_id", articleID, "error", err)
+	}
+
+	if article.ArticleType == "deals" || article.SourceType == "deals" || strings.HasPrefix(article.EventTag, "deals_json:") {
+		if err := deals.MarkDealsPublishedFromMetadata(ctx, database, article.EventTag); err != nil {
+			slog.Warn("failed to mark deals published after TG approval", "article_id", articleID, "error", err)
+		} else {
+			slog.Info("deals marked as published in history after TG approval", "article_id", articleID)
+		}
 	}
 
 	return nil

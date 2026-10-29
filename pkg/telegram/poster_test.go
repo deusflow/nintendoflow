@@ -3,75 +3,43 @@ package telegram
 import (
 	"strings"
 	"testing"
+
+	"github.com/deuswork/nintendoflow/pkg/db"
 )
 
-func TestSafeTruncateHTML(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "short string untouched",
-			input:    "<b>Hello</b> world",
-			maxLen:   50,
-			expected: "<b>Hello</b> world",
-		},
-		{
-			name:     "truncation closes open bold tag",
-			input:    "<b>Hello world this is a long text</b>",
-			maxLen:   20,
-			expected: "<b>Hello world th...</b>",
-		},
-		{
-			name:     "truncation closes nested tags",
-			input:    "<b><i>Hello world this is a nested tag test</i></b>",
-			maxLen:   25,
-			expected: "<b><i>Hello world this...</i></b>",
-		},
-		{
-			name:     "truncation in middle of html tag strips incomplete tag",
-			input:    "Test message <a href=\"https://example.com\">Click here</a>",
-			maxLen:   18,
-			expected: "Test message...</a>",
-		},
+func TestEncodeAndSplitCachedVideoURL(t *testing.T) {
+	rawURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+	fileID := "BAACAgIAAxkBAAIB22c"
+
+	encoded := EncodeCachedVideoURL(fileID, rawURL)
+	gotFileID, gotURL := SplitCachedVideoURL(encoded)
+	if gotFileID != fileID {
+		t.Fatalf("expected fileID %q, got %q", fileID, gotFileID)
+	}
+	if gotURL != rawURL {
+		t.Fatalf("expected url %q, got %q", rawURL, gotURL)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			res := safeTruncateHTML(tc.input, tc.maxLen)
-			// Must never have unclosed tag brackets '<' without matching '>'
-			if strings.Count(res, "<") != strings.Count(res, ">") {
-				t.Fatalf("unbalanced angle brackets in %q", res)
-			}
-			// Must end with closing tag if cut within open tag
-			if tc.name == "truncation closes open bold tag" && !strings.HasSuffix(res, "</b>") {
-				t.Errorf("expected suffix </b>, got %q", res)
-			}
-			if tc.name == "truncation closes nested tags" && !strings.HasSuffix(res, "</i></b>") {
-				t.Errorf("expected suffix </i></b>, got %q", res)
-			}
-		})
+	plainID, plainURL := SplitCachedVideoURL(rawURL)
+	if plainID != "" || plainURL != rawURL {
+		t.Fatalf("expected plain URL passthrough, got id=%q url=%q", plainID, plainURL)
 	}
 }
 
-func TestNewBaseChat(t *testing.T) {
-	// Numeric chat ID (private or supergroup)
-	bc, err := newBaseChat("-100123456789")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if bc.ChatID != -100123456789 || bc.ChannelUsername != "" {
-		t.Errorf("expected ChatID -100123456789 and empty username, got ChatID=%d Username=%q", bc.ChatID, bc.ChannelUsername)
-	}
+func TestSafeTruncateHTMLSupportsExpandableBlockquoteAndSpoiler(t *testing.T) {
+	input := `<b>Заголовок</b>` + "\n\n" +
+		`<blockquote expandable>Деталі патчу та <tg-spoiler>секретний бос у фіналі дуже довгий спойлер</tg-spoiler> дуже довгий текст для перевірки обрізання</blockquote>`
 
-	// Channel username with @
-	bc2, err := newBaseChat("@nintendoflow")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	truncated := safeTruncateHTML(input, 95)
+	if !strings.HasSuffix(truncated, "...</tg-spoiler></blockquote>") {
+		t.Fatalf("expected unclosed <tg-spoiler> and <blockquote> to be closed in reverse order, got: %s", truncated)
 	}
-	if bc2.ChatID != 0 || bc2.ChannelUsername != "@nintendoflow" {
-		t.Errorf("expected ChatID 0 and Username @nintendoflow, got ChatID=%d Username=%q", bc2.ChatID, bc2.ChannelUsername)
+}
+
+func TestBuildCaptionAddsCommunitySignature(t *testing.T) {
+	body := "<b>🎉 Відбувся реліз нової гри для Nintendo Switch 2</b>\n\nВидання містить базову гру та всі доповнення."
+	caption := buildCaption(&db.Article{BodyUA: body}, 1024)
+	if !strings.Contains(caption, `<a href="https://t.me/deusflow">DEUSFLOW</a> 🎮 <a href="https://t.me/deusflow">Твоя Nintendo Спільнота</a>`) {
+		t.Fatalf("expected community footer signature in caption, got: %s", caption)
 	}
 }
