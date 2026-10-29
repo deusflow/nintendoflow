@@ -292,6 +292,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 
 	// Step 6.5: fetch preferred media only for the single winning article.
 	rssVideoURL := selected.item.VideoURL
+	rssImageURL := selected.item.ImageURL
 	selected.item.VideoURL = ""
 	selected.item.ImageURL = ""
 	imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -300,16 +301,23 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	if videoURL == "" && rssVideoURL != "" {
 		videoURL = rssVideoURL
 	}
-	if imageErr != nil && videoURL == "" {
+	if imageURL == "" && rssImageURL != "" {
+		imageURL = rssImageURL
+	}
+	if imageErr != nil && videoURL == "" && imageURL == "" {
 		slog.Warn("media fetch failed, fallback to no media", "url", selected.item.Link, "error", imageErr)
-	} else if videoURL != "" {
-		selected.item.VideoURL = videoURL
-		slog.Info("youtube video extracted", "url", selected.item.Link, "video_url", videoURL)
-	} else if imageURL == "" {
-		slog.Info("no preferred media found, fallback to text-only", "url", selected.item.Link)
 	} else {
-		selected.item.ImageURL = imageURL
-		slog.Info("og:image extracted", "url", selected.item.Link)
+		if videoURL != "" {
+			selected.item.VideoURL = videoURL
+			slog.Info("youtube video extracted", "url", selected.item.Link, "video_url", videoURL)
+		}
+		if imageURL != "" {
+			selected.item.ImageURL = imageURL
+			slog.Info("og:image extracted", "url", selected.item.Link)
+		}
+		if videoURL == "" && imageURL == "" {
+			slog.Info("no preferred media found, fallback to text-only", "url", selected.item.Link)
+		}
 	}
 	logStage("image_fetch", stageStart, runStart)
 	stageStart = time.Now()
@@ -374,8 +382,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	cleanBody := sanitizeGeneratedBody(postData.TelegramHTML)
 	threadsBody := dedup.StripForbiddenIntro(postData.ThreadsText)
 
-	hypeCount := calculateHype(selected.item, items)
-	cleanBody += formatHypeFooter(hypeCount)
+	_ = calculateHype(selected.item, items)
 
 	logStage("ai_rewrite", stageStart, runStart)
 	stageStart = time.Now()

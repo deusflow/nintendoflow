@@ -138,11 +138,16 @@ func FetchRedditJSON(ctx context.Context, f config.Feed) ([]Item, error) {
 		if th := post.Thumbnail; th != "" && th != "self" && th != "default" && th != "nsfw" && th != "image" && strings.HasPrefix(th, "http") {
 			imgURL = th
 		}
+		vidURL := normalizeYouTubeURL(post.URL, link)
+		if vidURL == "" {
+			vidURL = ExtractYouTubeFromHTML(post.URL+" "+post.Selftext, link)
+		}
 
 		items = append(items, Item{
 			Title:          post.Title,
 			Link:           link,
 			Description:    description,
+			VideoURL:       vidURL,
 			ImageURL:       imgURL,
 			PublishedAt:    &t,
 			SourceName:     f.Name,

@@ -38,8 +38,8 @@ func TestFetchPreferredMediaYouTubePriority(t *testing.T) {
 	if video != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
 		t.Fatalf("unexpected video url: %q", video)
 	}
-	if image != "" {
-		t.Fatalf("expected empty image fallback when youtube exists, got %q", image)
+	if image != "https://cdn.example.com/a.jpg" {
+		t.Fatalf("expected og:image to also be preserved alongside youtube video, got %q", image)
 	}
 }
 
@@ -90,9 +90,9 @@ func TestFetchOGImageHTTPError(t *testing.T) {
 
 func TestFetchPreferredMediaYouTubeNoCookieAndLazyIframe(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`<html><body>
-			<iframe data-src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"></iframe>
-		</body></html>`))
+		_, _ = w.Write([]byte(`<html><body><article>
+			<div class="rll-youtube-player" data-id="dQw4w9WgXcQ" data-src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"></div>
+		</article></body></html>`))
 	}))
 	defer ts.Close()
 
@@ -101,7 +101,7 @@ func TestFetchPreferredMediaYouTubeNoCookieAndLazyIframe(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if video != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
-		t.Fatalf("expected youtube-nocookie lazy iframe to resolve, got %q", video)
+		t.Fatalf("expected youtube-nocookie lazy div/iframe to resolve, got %q", video)
 	}
 }
 

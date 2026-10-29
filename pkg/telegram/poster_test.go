@@ -37,9 +37,18 @@ func TestSafeTruncateHTMLSupportsExpandableBlockquoteAndSpoiler(t *testing.T) {
 }
 
 func TestBuildCaptionAddsCommunitySignature(t *testing.T) {
-	body := "<b>🎉 Відбувся реліз нової гри для Nintendo Switch 2</b>\n\nВидання містить базову гру та всі доповнення."
-	caption := buildCaption(&db.Article{BodyUA: body}, 1024)
-	if !strings.Contains(caption, `<a href="https://t.me/deusflow">DEUSFLOW</a> 🎮 <a href="https://t.me/deusflow">Твоя Nintendo Спільнота</a>`) {
-		t.Fatalf("expected community footer signature in caption, got: %s", caption)
+	body := "🎉 <b>Відбувся реліз Cities: Skylines - Expanded Edition для Nintendo Switch 2</b>\n\n" +
+		"Видання містить базову гру, а також 10 доповнень і контентних наборів.\n\n" +
+		"<i>Джерело: Nintendo Everything</i>\n\n" +
+		"🔥 <i>Знайдено у 2 джерелах</i>"
+	caption := buildCaption(&db.Article{BodyUA: body, SourceType: "official", ArticleType: "news"}, 1024)
+	if !strings.HasPrefix(caption, "🎉 <b>Відбувся реліз") {
+		t.Fatalf("expected caption to start directly with bold title, got: %s", caption)
+	}
+	if strings.Contains(caption, "Джерело:") || strings.Contains(caption, "Знайдено у") {
+		t.Fatalf("expected legacy source/hype lines to be stripped, got: %s", caption)
+	}
+	if !strings.HasSuffix(caption, `<a href="https://t.me/deusflow">DEUSFLOW</a> 🎮 <a href="https://t.me/deusflow">Твоя Nintendo Спільнота</a>`) {
+		t.Fatalf("expected community footer signature at bottom of caption, got: %s", caption)
 	}
 }

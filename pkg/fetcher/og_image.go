@@ -14,7 +14,7 @@ import (
 
 var (
 	youtubeIDPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
-	rawYouTubeEmbedRe = regexp.MustCompile(`(?:https?:)?//(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com/(?:embed|shorts|live|v)/|youtu\.be/)([A-Za-z0-9_-]{11})`)
+	rawYouTubeEmbedRe = regexp.MustCompile(`(?:https?:)?//(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com/(?:embed/|shorts/|live/|v/|watch\?(?:[^"'\s<>]*&)?v=)|youtu\.be/)([A-Za-z0-9_-]{11})`)
 )
 
 // FetchOGImage loads page HTML and returns the og:image content if present.
@@ -27,8 +27,13 @@ func FetchOGImage(ctx context.Context, sourceURL string) (string, error) {
 }
 
 // FetchPreferredMedia loads page HTML and returns preferred media URLs.
-// Priority: YouTube / direct MP4 video first, then og:image.
+// Both videoURL (if a YouTube trailer/video is present) and imageURL (og:image / twitter:image)
+// are returned so the caller always has a fallback image alongside the video.
 func FetchPreferredMedia(ctx context.Context, sourceURL string) (videoURL string, imageURL string, err error) {
+	if directYT := normalizeYouTubeURL(sourceURL, sourceURL); directYT != "" {
+		return directYT, "", nil
+	}
+
 	finalURL, raw, err := FetchPageHTML(ctx, sourceURL)
 	if err != nil {
 		return "", "", err
@@ -37,33 +42,32 @@ func FetchPreferredMedia(ctx context.Context, sourceURL string) (videoURL string
 		finalURL = sourceURL
 	}
 
+	if directYT := normalizeYouTubeURL(finalURL, finalURL); directYT != "" {
+		return directYT, "", nil
+	}
+
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(raw))
 	if err != nil {
 		return "", "", fmt.Errorf("parse html: %w", err)
 	}
 
-	if yt := extractYouTubeURL(doc, string(raw), finalURL); yt != "" {
-		return yt, "", nil
+	videoURL = extractYouTubeURL(doc, string(raw), finalURL)
+
+	rawImg, exists := doc.Find(`meta[property="og:image"]`).First().Attr("content")
+	if !exists || strings.TrimSpace(rawImg) == "" {
+		rawImg, _ = doc.Find(`meta[name="twitter:image"]`).First().Attr("content")
+	}
+	rawImg = strings.TrimSpace(rawImg)
+	if rawImg != "" {
+		imageURL = rawImg
+		if base, errBase := url.Parse(finalURL); errBase == nil {
+			if rel, errRel := url.Parse(rawImg); errRel == nil {
+				imageURL = base.ResolveReference(rel).String()
+			}
+		}
 	}
 
-	imageURL, exists := doc.Find(`meta[property="og:image"]`).First().Attr("content")
-	if !exists || strings.TrimSpace(imageURL) == "" {
-		imageURL, _ = doc.Find(`meta[name="twitter:image"]`).First().Attr("content")
-	}
-	imageURL = strings.TrimSpace(imageURL)
-	if imageURL == "" {
-		return "", "", nil
-	}
-
-	base, err := url.Parse(finalURL)
-	if err != nil {
-		return "", imageURL, nil
-	}
-	rel, err := url.Parse(imageURL)
-	if err != nil {
-		return "", imageURL, nil
-	}
-	return "", base.ResolveReference(rel).String(), nil
+	return videoURL, imageURL, nil
 }
 
 // ExtractYouTubeFromHTML searches an HTML snippet (such as an RSS item body) for a YouTube video URL.
@@ -80,7 +84,28 @@ func ExtractYouTubeFromHTML(htmlSnippet, pageURL string) string {
 
 func extractYouTubeURL(doc *goquery.Document, rawHTML string, sourceURL string) string {
 	if doc != nil {
-		// 1. Check custom YouTube web components & data attributes (used by Nintendo Life, Eurogamer, VGC, etc.)
+		// 0. Check page-level OpenGraph / Twitter video player meta tags first
+		metaSelectors := []string{
+			`meta[property="og:video:url"]`,
+			`meta[property="og:video:secure_url"]`,
+			`meta[property="og:video"]`,
+			`meta[name="twitter:player"]`,
+		}
+		for _, sel := range metaSelectors {
+			if raw, ok := doc.Find(sel).First().Attr("content"); ok {
+				if normalized := normalizeYouTubeURL(raw, sourceURL); normalized != "" {
+					return normalized
+				}
+			}
+		}
+
+		// Scope search to article body container first so sidebar/footer channel links are ignored,
+		// then fall back to the full document if no article container matched.
+		scopes := []*goquery.Selection{
+			doc.Find(`article, [itemprop="articleBody"], .article-body, .entry-content, .post-content, .article-content, .story-body, main`),
+			doc.Selection,
+		}
+
 		idSelectors := []struct {
 			sel  string
 			attr string
@@ -88,50 +113,69 @@ func extractYouTubeURL(doc *goquery.Document, rawHTML string, sourceURL string) 
 			{"lite-youtube", "videoid"},
 			{"[data-youtube-id]", "data-youtube-id"},
 			{"[data-video-id]", "data-video-id"},
+			{"[data-embed-id]", "data-embed-id"},
+			{".rll-youtube-player[data-id]", "data-id"},
 			{".youtube-player[data-id]", "data-id"},
-		}
-		for _, item := range idSelectors {
-			if id, ok := doc.Find(item.sel).First().Attr(item.attr); ok {
-				id = strings.TrimSpace(id)
-				if youtubeIDPattern.MatchString(id) {
-					return "https://www.youtube.com/watch?v=" + id
-				}
-			}
+			{".youtube-video[data-id]", "data-id"},
+			{`[class*="youtube"][data-id]`, "data-id"},
 		}
 
-		// 2. Check meta tags, iframes (including youtube-nocookie.com and lazy data-src), and watch links
-		selectors := []struct {
+		urlSelectors := []struct {
 			sel   string
 			attrs []string
 		}{
-			{`meta[property="og:video:url"]`, []string{"content"}},
-			{`meta[property="og:video:secure_url"]`, []string{"content"}},
-			{`meta[property="og:video"]`, []string{"content"}},
-			{`meta[name="twitter:player"]`, []string{"content"}},
 			{`iframe[src*="youtube"]`, []string{"src"}},
 			{`iframe[data-src*="youtube"]`, []string{"data-src"}},
 			{`iframe[data-lazy-src*="youtube"]`, []string{"data-lazy-src"}},
 			{`iframe[src*="youtu.be"]`, []string{"src"}},
 			{`iframe[data-src*="youtu.be"]`, []string{"data-src"}},
+			{`[data-src*="youtube.com/embed"]`, []string{"data-src"}},
+			{`[data-src*="youtube-nocookie.com/embed"]`, []string{"data-src"}},
+			{`[data-lazy-src*="youtube.com/embed"]`, []string{"data-lazy-src"}},
 			{`a[href*="youtube.com/watch"]`, []string{"href"}},
 			{`a[href*="youtu.be/"]`, []string{"href"}},
 		}
-		for _, item := range selectors {
-			sel := doc.Find(item.sel).First()
-			for _, attr := range item.attrs {
-				raw, ok := sel.Attr(attr)
-				if !ok {
-					continue
+
+		for _, scope := range scopes {
+			if scope == nil || scope.Length() == 0 {
+				continue
+			}
+			for _, item := range idSelectors {
+				if id, ok := scope.Find(item.sel).First().Attr(item.attr); ok {
+					id = strings.TrimSpace(id)
+					if youtubeIDPattern.MatchString(id) {
+						return "https://www.youtube.com/watch?v=" + id
+					}
 				}
-				if normalized := normalizeYouTubeURL(raw, sourceURL); normalized != "" {
-					return normalized
+			}
+			for _, item := range urlSelectors {
+				sel := scope.Find(item.sel).First()
+				for _, attr := range item.attrs {
+					raw, ok := sel.Attr(attr)
+					if !ok {
+						continue
+					}
+					if normalized := normalizeYouTubeURL(raw, sourceURL); normalized != "" {
+						return normalized
+					}
+				}
+			}
+			// Also scan raw inner HTML of the scope (catches <noscript><iframe> and inline JSON embeds)
+			if scopeHTML, err := scope.Html(); err == nil && scopeHTML != "" {
+				unescaped := strings.ReplaceAll(scopeHTML, `\/`, `/`)
+				if m := rawYouTubeEmbedRe.FindStringSubmatch(unescaped); len(m) >= 2 {
+					id := strings.TrimSpace(m[1])
+					if youtubeIDPattern.MatchString(id) {
+						return "https://www.youtube.com/watch?v=" + id
+					}
 				}
 			}
 		}
 	}
 
-	// 3. Fallback regex scan on raw HTML (catches JSON-LD embedUrl, escaped scripts, etc.)
-	if m := rawYouTubeEmbedRe.FindStringSubmatch(rawHTML); len(m) >= 2 {
+	// Fallback regex scan on raw HTML (catches JSON-LD embedUrl, escaped scripts, <noscript>, etc.)
+	unescapedRaw := strings.ReplaceAll(rawHTML, `\/`, `/`)
+	if m := rawYouTubeEmbedRe.FindStringSubmatch(unescapedRaw); len(m) >= 2 {
 		id := strings.TrimSpace(m[1])
 		if youtubeIDPattern.MatchString(id) {
 			return "https://www.youtube.com/watch?v=" + id

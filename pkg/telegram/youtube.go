@@ -146,28 +146,62 @@ func getYouTubeStreamViaYtDlp(ctx context.Context, videoURL string) (io.ReadClos
 	_ = os.Remove(tmpPath)
 	defer func() { _ = os.Remove(tmpPath) }()
 
-	dlCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-
-	// Select best single-file or merged mp4 up to 720p under 48MB
-	cmd := exec.CommandContext(dlCtx, ytDlpBin,
+	// Attempt 1: Full trailer in H.264 (avc1) + AAC (mp4a) up to 720p under 48MB,
+	// with -movflags +faststart so Telegram mobile/desktop streams inline with duration badge.
+	fullArgs := []string{
 		"--no-playlist",
 		"--no-warnings",
+		"--geo-bypass",
+		"--extractor-args", "youtube:player_client=android,web",
 		"--max-filesize", "48M",
-		"-f", "best[ext=mp4][height<=720][filesize<48M]/best[ext=mp4][height<=720]/18/best[ext=mp4]",
+		"-S", "res:720,ext:mp4:m4a,vcodec:h264,acodec:aac",
+		"-f", "bestvideo[ext=mp4][vcodec^=avc1][height<=720][filesize<40M]+bestaudio[ext=m4a][filesize<8M]/bestvideo[ext=mp4][vcodec^=avc1][height<=720][filesize_approx<40M]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/18/best[ext=mp4]",
 		"--merge-output-format", "mp4",
+		"--postprocessor-args", "ffmpeg:-movflags +faststart",
 		"-o", tmpPath,
 		videoURL,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		slog.Debug("yt-dlp download attempt failed", "error", err, "output", string(out))
-		return nil, 0, err
 	}
 
-	data, err := os.ReadFile(tmpPath)
-	if err != nil || len(data) == 0 {
-		return nil, 0, fmt.Errorf("yt-dlp produced empty file: %w", err)
+	dlCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	out, runErr := exec.CommandContext(dlCtx, ytDlpBin, fullArgs...).CombinedOutput()
+	cancel()
+
+	data, readErr := os.ReadFile(tmpPath)
+	if runErr != nil || readErr != nil || len(data) == 0 || int64(len(data)) > maxVideoBytes {
+		_ = os.Remove(tmpPath)
+		slog.Warn("yt-dlp full video attempt exceeded limit or failed, trying 90s highlight clip",
+			"url", videoURL,
+			"error", runErr,
+			"output", strings.TrimSpace(string(out)),
+		)
+
+		// Attempt 2: If the video is a long showcase/Direct (>48MB), grab the first 90 seconds in H.264 MP4
+		clipArgs := []string{
+			"--no-playlist",
+			"--no-warnings",
+			"--geo-bypass",
+			"--extractor-args", "youtube:player_client=android,web",
+			"--download-sections", "*0:00-1:30",
+			"-S", "res:720,ext:mp4:m4a,vcodec:h264,acodec:aac",
+			"-f", "bestvideo[ext=mp4][vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/18/best[ext=mp4]",
+			"--merge-output-format", "mp4",
+			"--postprocessor-args", "ffmpeg:-movflags +faststart",
+			"-o", tmpPath,
+			videoURL,
+		}
+		clipCtx, clipCancel := context.WithTimeout(ctx, 50*time.Second)
+		clipOut, clipErr := exec.CommandContext(clipCtx, ytDlpBin, clipArgs...).CombinedOutput()
+		clipCancel()
+		if clipErr != nil {
+			slog.Warn("yt-dlp clip download attempt failed", "url", videoURL, "error", clipErr, "output", strings.TrimSpace(string(clipOut)))
+			return nil, 0, clipErr
+		}
+		data, readErr = os.ReadFile(tmpPath)
+		if readErr != nil || len(data) == 0 {
+			return nil, 0, fmt.Errorf("yt-dlp produced empty file: %w", readErr)
+		}
 	}
+
 	if int64(len(data)) > maxVideoBytes {
 		return nil, 0, fmt.Errorf("yt-dlp file exceeds 50MB (%d bytes)", len(data))
 	}

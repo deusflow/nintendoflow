@@ -829,7 +829,16 @@ func sanitizeEditedBody(text string) string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		lower := strings.ToLower(trimmed)
-		if lower == "preview" || strings.HasPrefix(lower, "title:") || strings.HasPrefix(lower, "source:") || strings.HasPrefix(lower, "score:") {
+		if strings.HasPrefix(trimmed, "🔗") || strings.HasPrefix(trimmed, "🔥") {
+			continue
+		}
+		if strings.HasPrefix(lower, "джерело:") || strings.HasPrefix(lower, "<i>джерело:") {
+			continue
+		}
+		if lower == "preview" || lower == "preview telegram" || lower == "<b>preview</b>" || lower == "<b>preview telegram</b>" {
+			continue
+		}
+		if strings.HasPrefix(lower, "title:") || strings.HasPrefix(lower, "source:") || strings.HasPrefix(lower, "score:") {
 			continue
 		}
 		if strings.HasPrefix(lower, "<b>title:</b>") || strings.HasPrefix(lower, "<b>source:</b>") || strings.HasPrefix(lower, "<b>score:</b>") {
@@ -841,8 +850,11 @@ func sanitizeEditedBody(text string) string {
 		kept = append(kept, line)
 	}
 	clean := strings.TrimSpace(strings.Join(kept, "\n"))
+	if strings.HasPrefix(strings.ToLower(clean), "<b>preview telegram</b>") {
+		clean = strings.TrimSpace(clean[len("<b>preview telegram</b>"):])
+	}
 	if strings.HasPrefix(strings.ToLower(clean), "<b>preview</b>") {
-		clean = strings.TrimSpace(strings.TrimPrefix(clean, "<b>Preview</b>"))
+		clean = strings.TrimSpace(clean[len("<b>preview</b>"):])
 	}
 	return clean
 }

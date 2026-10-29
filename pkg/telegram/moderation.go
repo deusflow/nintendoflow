@@ -51,7 +51,7 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 	videoPreviewSent := false
 	if cleanVideoURL != "" {
 		baseChat := tgbotapi.BaseChat{ChatID: chat, ChannelUsername: channel}
-		caption := fmt.Sprintf("<b>Preview Telegram (Native Video)</b>\n🎬 %s", escapeHTML(article.TitleRaw))
+		caption := buildCaption(&article, 1024)
 
 		if existingFileID != "" {
 			vidCfg := tgbotapi.VideoConfig{

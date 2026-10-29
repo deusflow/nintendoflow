@@ -71,6 +71,8 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (source_url) DO UPDATE
 		SET score=GREATEST(articles.score, EXCLUDED.score),
+			video_url=COALESCE(NULLIF(EXCLUDED.video_url,''), articles.video_url),
+			image_url=COALESCE(NULLIF(EXCLUDED.image_url,''), articles.image_url),
 			article_type=COALESCE(NULLIF(articles.article_type,''), EXCLUDED.article_type),
 			status=CASE
 				WHEN articles.status IN ('published', 'rejected') THEN articles.status
