@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,39 +68,41 @@ func SendModerationPreview(bot *tgbotapi.BotAPI, chatID string, article db.Artic
 				videoPreviewSent = true
 			}
 		} else if strings.Contains(cleanVideoURL, "youtube") || strings.Contains(cleanVideoURL, "youtu.be") {
-			if stream, size, dlErr := getYouTubeStream(context.Background(), cleanVideoURL); dlErr == nil {
-				if size < 49*1024*1024 {
-					vidCfg := tgbotapi.VideoConfig{
-						BaseFile: tgbotapi.BaseFile{
-							BaseChat: baseChat,
-							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
-						},
-						Caption:           caption,
-						ParseMode:         "HTML",
-						SupportsStreaming: true,
-					}
-					sentVid, sendErr := bot.Send(vidCfg)
-					_ = stream.Close()
-					if sendErr == nil {
-						videoPreviewSent = true
-						if sentVid.Video != nil && sentVid.Video.FileID != "" {
-							encoded := EncodeCachedVideoURL(sentVid.Video.FileID, cleanVideoURL)
-							previewVideoCacheMu.Lock()
-							previewVideoURLCache[article.ID] = encoded
-							previewVideoCacheMu.Unlock()
-							slog.Info("telegram preview native video uploaded and file_id cached",
-								"article_id", article.ID,
-								"file_id", sentVid.Video.FileID,
-							)
+			if _, err := exec.LookPath("yt-dlp"); err == nil {
+				if stream, size, dlErr := getYouTubeStream(context.Background(), cleanVideoURL); dlErr == nil {
+					if size < 49*1024*1024 {
+						vidCfg := tgbotapi.VideoConfig{
+							BaseFile: tgbotapi.BaseFile{
+								BaseChat: baseChat,
+								File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
+							},
+							Caption:           caption,
+							ParseMode:         "HTML",
+							SupportsStreaming: true,
+						}
+						sentVid, sendErr := bot.Send(vidCfg)
+						_ = stream.Close()
+						if sendErr == nil {
+							videoPreviewSent = true
+							if sentVid.Video != nil && sentVid.Video.FileID != "" {
+								encoded := EncodeCachedVideoURL(sentVid.Video.FileID, cleanVideoURL)
+								previewVideoCacheMu.Lock()
+								previewVideoURLCache[article.ID] = encoded
+								previewVideoCacheMu.Unlock()
+								slog.Info("telegram preview native video uploaded and file_id cached",
+									"article_id", article.ID,
+									"file_id", sentVid.Video.FileID,
+								)
+							}
+						} else {
+							slog.Warn("telegram preview video upload failed, fallback to thumbnail", "article_id", article.ID, "error", sendErr)
 						}
 					} else {
-						slog.Warn("telegram preview video upload failed, fallback to thumbnail", "article_id", article.ID, "error", sendErr)
+						_ = stream.Close()
 					}
 				} else {
-					_ = stream.Close()
+					slog.Warn("telegram preview video download failed, fallback to thumbnail", "article_id", article.ID, "error", dlErr)
 				}
-			} else {
-				slog.Warn("telegram preview video download failed, fallback to thumbnail", "article_id", article.ID, "error", dlErr)
 			}
 		}
 	}

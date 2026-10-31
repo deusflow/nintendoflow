@@ -54,28 +54,36 @@ func parseMetaError(body []byte, statusCode int) error {
 	return fmt.Errorf("Meta API returned HTTP %d: %s", statusCode, string(body))
 }
 
-func getThreadsUserID(ctx context.Context, accessToken string) string {
+func getThreadsUserID(ctx context.Context, accessToken string) (string, error) {
 	if envID := strings.TrimSpace(os.Getenv("THREADS_USER_ID")); envID != "" {
-		return envID
+		return envID, nil
 	}
 	// Fetch actual user ID via /me to avoid Code 100 "Object with ID 'me' does not exist"
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://graph.threads.net/v1.0/me?fields=id", nil)
-	if err == nil {
-		req.Header.Set("Authorization", "Bearer "+accessToken)
-		resp, err := httpClient.Do(req)
-		if err == nil {
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode == http.StatusOK {
-				var data struct {
-					ID string `json:"id"`
-				}
-				if err := json.NewDecoder(resp.Body).Decode(&data); err == nil && data.ID != "" {
-					return data.ID
-				}
-			}
-		}
+	meCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(meCtx, "GET", "https://graph.threads.net/v1.0/me?fields=id", nil)
+	if err != nil {
+		return "", fmt.Errorf("build /me request: %w", err)
 	}
-	return "me"
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("call /me: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("get user id failed: %w", parseMetaError(bodyBytes, resp.StatusCode))
+	}
+	var data struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(bodyBytes, &data); err != nil || strings.TrimSpace(data.ID) == "" {
+		return "", fmt.Errorf("invalid /me response: %s", string(bodyBytes))
+	}
+	return data.ID, nil
 }
 
 type containerStatusResp struct {
@@ -88,11 +96,12 @@ func waitForContainer(ctx context.Context, containerID, accessToken string) erro
 	statusURL := fmt.Sprintf("https://graph.threads.net/v1.0/%s?fields=status,error_message&access_token=%s",
 		url.PathEscape(containerID), url.QueryEscape(accessToken))
 
-	for attempt := 1; attempt <= 5; attempt++ {
+	var lastStatus string
+	for attempt := 1; attempt <= 15; attempt++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(attempt*400) * time.Millisecond):
+		case <-time.After(1 * time.Second):
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
@@ -111,6 +120,7 @@ func waitForContainer(ctx context.Context, containerID, accessToken string) erro
 			continue
 		}
 
+		lastStatus = cs.Status
 		switch cs.Status {
 		case "FINISHED", "PUBLISHED":
 			return nil
@@ -122,10 +132,46 @@ func waitForContainer(ctx context.Context, containerID, accessToken string) erro
 		case "EXPIRED":
 			return fmt.Errorf("threads container expired")
 		case "IN_PROGRESS":
-			// wait for next attempt
+			// continue polling
 		}
 	}
-	return nil
+	return fmt.Errorf("threads container processing timed out after 15s (status: %s)", lastStatus)
+}
+
+// RefreshLongLivedToken refreshes a valid long-lived Threads access token.
+// Tokens can be refreshed once every 24 hours and extend validity by another 60 days.
+func RefreshLongLivedToken(ctx context.Context, currentToken string) (newToken string, expiresIn int, err error) {
+	currentToken = strings.TrimSpace(currentToken)
+	if currentToken == "" {
+		return "", 0, fmt.Errorf("empty access token")
+	}
+	apiURL := fmt.Sprintf("https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=%s",
+		url.QueryEscape(currentToken))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return "", 0, fmt.Errorf("build refresh request: %w", err)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", 0, fmt.Errorf("execute refresh request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", 0, parseMetaError(bodyBytes, resp.StatusCode)
+	}
+
+	var data struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(bodyBytes, &data); err != nil || data.AccessToken == "" {
+		return "", 0, fmt.Errorf("decode refresh response: %w", err)
+	}
+	return data.AccessToken, data.ExpiresIn, nil
 }
 
 // PostThread publishes a text thread to the Meta Threads API.
@@ -135,7 +181,10 @@ func PostThread(ctx context.Context, text string) (string, error) {
 		return "", fmt.Errorf("missing THREADS_ACCESS_TOKEN in environment. Check Vercel/GitHub secrets")
 	}
 
-	userID := getThreadsUserID(ctx, accessToken)
+	userID, err := getThreadsUserID(ctx, accessToken)
+	if err != nil {
+		return "", err
+	}
 
 	// Step 1: Create a container for the text post
 	apiURL := fmt.Sprintf("https://graph.threads.net/v1.0/%s/threads", userID)

@@ -111,5 +111,11 @@ func TestIsAuthorizedAdmin(t *testing.T) {
 	if isAuthorizedAdmin(-100111, 999999) {
 		t.Error("expected unknown chat and user to be rejected")
 	}
+
+	t.Setenv("ADMIN_CHAT_ID", "")
+	t.Setenv("TEST_ADMIN_CHAT_ID", "")
+	if isAuthorizedAdmin(-100999888777, 123456789) {
+		t.Error("expected access to be denied when no admin IDs are configured")
+	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -80,54 +81,49 @@ func PostArticle(bot *tgbotapi.BotAPI, channelID string, article db.Article) (in
 			}
 		}
 
-		// 1. Try to send as actual Native Video
+		// 1. Try to send as actual Native Video if yt-dlp is available in the environment.
+		// On serverless environments (Vercel), avoid heavy on-the-fly video downloads and use native link preview instead.
 		if strings.Contains(videoURL, "youtube.com") || strings.Contains(videoURL, "youtu.be") {
-			// Try to download and stream to Telegram
-			stream, size, err := getYouTubeStream(context.Background(), videoURL)
-			if err == nil {
-				// Telegram bot API limits local files to 50MB
-				if size < 49*1024*1024 {
-					video := tgbotapi.VideoConfig{
-						BaseFile: tgbotapi.BaseFile{
-							BaseChat: baseChat,
-							File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
-						},
-						Caption:           buildCaption(&article, 1024),
-						ParseMode:         "HTML",
-						SupportsStreaming: true,
-					}
-					if markup != nil {
-						video.ReplyMarkup = markup
-					}
-					sentMsg, errSend := bot.Send(video)
-					_ = stream.Close()
-					if errSend == nil {
-						return sentMsg.MessageID, nil
-					} else {
-						slog.Warn("youtube video upload failed, fallback to native link preview", "article_id", article.ID, "error", errSend)
-						msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
-						if textErr == nil {
-							return msgID, nil
+			if _, err := exec.LookPath("yt-dlp"); err == nil {
+				stream, size, err := getYouTubeStream(context.Background(), videoURL)
+				if err == nil {
+					// Telegram bot API limits local files to 50MB
+					if size < 49*1024*1024 {
+						video := tgbotapi.VideoConfig{
+							BaseFile: tgbotapi.BaseFile{
+								BaseChat: baseChat,
+								File:     tgbotapi.FileReader{Name: "video.mp4", Reader: stream},
+							},
+							Caption:           buildCaption(&article, 1024),
+							ParseMode:         "HTML",
+							SupportsStreaming: true,
 						}
-						slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
+						if markup != nil {
+							video.ReplyMarkup = markup
+						}
+						sentMsg, errSend := bot.Send(video)
+						_ = stream.Close()
+						if errSend == nil {
+							return sentMsg.MessageID, nil
+						}
+						slog.Warn("youtube video upload failed, fallback to native link preview", "article_id", article.ID, "error", errSend)
+					} else {
+						_ = stream.Close()
+						slog.Info("youtube video too large, fallback to native link preview", "article_id", article.ID, "size", size)
 					}
 				} else {
-					_ = stream.Close()
-					slog.Info("youtube video too large, fallback to native link preview", "article_id", article.ID, "size", size)
-					msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
-					if textErr == nil {
-						return msgID, nil
-					}
-					slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
+					slog.Warn("youtube download failed, fallback to native link preview", "error", err)
 				}
 			} else {
-				slog.Warn("youtube download failed, fallback to native link preview", "error", err)
-				msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
-				if textErr == nil {
-					return msgID, nil
-				}
-				slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
+				slog.Info("yt-dlp not available in environment, skipping heavy download and using native link preview", "article_id", article.ID)
 			}
+
+			// Fallback: Telegram native rich link preview for YouTube video
+			msgID, textErr := sendTextWithLinkPreview(bot, channelID, buildCaption(&article, 4096), videoURL, markup)
+			if textErr == nil {
+				return msgID, nil
+			}
+			slog.Warn("youtube native link preview failed, fallback to photo", "article_id", article.ID, "error", textErr)
 		} else if videoURL != "" {
 			// Non-youtube video (direct remote URL mp4)
 			video := tgbotapi.VideoConfig{

@@ -139,8 +139,8 @@ func isAuthorizedAdmin(chatID, userID int64) bool {
 		allowedRaw = append(allowedRaw, strings.Split(v, ",")...)
 	}
 	if len(allowedRaw) == 0 {
-		// No explicit admin restriction configured in environment
-		return true
+		slog.Warn("isAuthorizedAdmin: neither ADMIN_CHAT_ID nor TEST_ADMIN_CHAT_ID configured, denying access")
+		return false
 	}
 
 	for _, raw := range allowedRaw {
@@ -183,15 +183,17 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Best-effort cleanup of expired edit sessions on every request.
+	// Best-effort cleanup of expired edit sessions in background without blocking response.
 	if dsn := strings.TrimSpace(os.Getenv("DATABASE_URL")); dsn != "" {
-		if database, dbErr := getDB(dsn); dbErr == nil {
-			cleanCtx, cleanCancel := context.WithTimeout(r.Context(), 3*time.Second)
-			defer cleanCancel()
-			if cleanErr := db.CleanupExpiredModerationEditSessions(cleanCtx, database, editSessionTTL); cleanErr != nil {
-				slog.Warn("webhook: cleanup expired edit sessions failed (non-fatal)", "error", cleanErr)
+		go func() {
+			if database, dbErr := getDB(dsn); dbErr == nil {
+				cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cleanCancel()
+				if cleanErr := db.CleanupExpiredModerationEditSessions(cleanCtx, database, editSessionTTL); cleanErr != nil {
+					slog.Warn("webhook: cleanup expired edit sessions failed (non-fatal)", "error", cleanErr)
+				}
 			}
-		}
+		}()
 	}
 
 	var update tgbotapi.Update
@@ -342,45 +344,67 @@ func handleCallback(parent context.Context, cb *tgbotapi.CallbackQuery) error {
 	switch action {
 	case "pub_tg":
 		slog.Info("handleCallback: publishing article to TG", "article_id", articleID)
-		if err := publishPendingArticleTG(ctx, database, bot, testChannelID, articleID); err != nil {
-			slog.Error("handleCallback: TG publish failed", "error", err)
-			answerCallbackAlert(bot, cb.ID, fmt.Sprintf("Failed to publish to Telegram:\n%v", err))
+
+		article, err := db.GetArticleByID(ctx, database, articleID)
+		if err != nil {
+			return fmt.Errorf("get article for tg %d: %w", articleID, err)
+		}
+		if article.PostedTG {
+			answerCallback(bot, cb.ID, "Вже опубліковано в Telegram! ✅")
 			return nil
 		}
-		
+
+		// Acknowledge instantly so the Telegram button stops spinning immediately
+		answerCallback(bot, cb.ID, "⏳ Публікую в Telegram...")
+
+		if err := publishPendingArticleTG(ctx, database, bot, testChannelID, articleID); err != nil {
+			slog.Error("handleCallback: TG publish failed", "error", err)
+			if cb.Message != nil {
+				_ = telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, fmt.Sprintf("Telegram error ❌\n\n%v", err))
+			}
+			return nil
+		}
+
 		if cb.Message != nil {
 			if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published to Telegram ✅"); err != nil {
 				slog.Warn("handleCallback: edit message after publish failed", "error", err)
 			}
 		}
-		answerCallback(bot, cb.ID, "Published to Telegram")
 		slog.Info("handleCallback: article published to TG", "article_id", articleID)
 
 	case "pub_th":
 		slog.Info("handleCallback: publishing article to Threads", "article_id", articleID)
-		
+
 		article, err := db.GetArticleByID(ctx, database, articleID)
 		if err != nil {
 			return fmt.Errorf("get article for threads %d: %w", articleID, err)
 		}
-		
+
 		if !article.PostedTG {
 			answerCallbackAlert(bot, cb.ID, "⚠️ Спочатку опублікуй пост у Telegram, щоб отримати посилання для Threads!")
 			return nil
 		}
-		
+		if article.PostedThreads {
+			answerCallback(bot, cb.ID, "Вже опубліковано в Threads! ✅")
+			return nil
+		}
+
+		// Acknowledge instantly so the Telegram button stops spinning immediately
+		answerCallback(bot, cb.ID, "⏳ Публікую в Threads...")
+
 		if err := publishPendingArticleTH(ctx, database, article); err != nil {
 			slog.Error("handleCallback: Threads publish failed", "error", err)
-			answerCallbackAlert(bot, cb.ID, fmt.Sprintf("Failed to publish to Threads:\n%v", err))
+			if cb.Message != nil {
+				_ = telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, fmt.Sprintf("Threads error ❌\n\n%v", err))
+			}
 			return nil // Don't return error to http handler so we can gracefully ack the callback
 		}
-		
+
 		if cb.Message != nil {
 			if err := telegram.EditModerationMessage(bot, cb.Message.Chat.ID, cb.Message.MessageID, "Published to Threads ✅"); err != nil {
 				slog.Warn("handleCallback: edit message after publish failed", "error", err)
 			}
 		}
-		answerCallback(bot, cb.ID, "Published to Threads")
 		slog.Info("handleCallback: article published to Threads", "article_id", articleID)
 
 	case "reject":
