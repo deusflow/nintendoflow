@@ -2,7 +2,7 @@ name: Nintendo Deals Digest
 
 on:
   schedule:
-    - cron: '0 10 * * 4' # Every Thursday at 10:00 UTC
+    - cron: '23 10 * * 4' # Every Thursday at 10:23 UTC (off-peak)
   workflow_dispatch:
 
 jobs:
