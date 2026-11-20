@@ -2,8 +2,7 @@ name: Nintendo News Bot
 
 on:
   schedule:
-    - cron: '0 10 * * *'
-    - cron: '0 17 * * *'
+    - cron: '33 14 * * *'
   workflow_dispatch:
 
 jobs:
