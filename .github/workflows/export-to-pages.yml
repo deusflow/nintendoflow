@@ -1,9 +1,10 @@
 name: Export Articles to GitHub Pages
 
 on:
-  schedule:
-    # 6 times/day (UTC)
-    - cron: '0 6,10,14,18,22,2 * * *'
+  workflow_run:
+    workflows: ["Nintendo News Bot", "Nintendo Masterpiece Daily", "Nintendo Deals Digest"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
