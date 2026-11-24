@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	articleContentMaxChars = 1500
+	articleContentMaxChars = 4000
 	articleContentMinChars = 50
 )
 
 // FetchArticleContent downloads the page at rawURL and extracts the main
-// textual content. It tries <article> first, falls back to <main>, then to all
-// <p> tags, and finally to the meta description.
+// textual content. It strips boilerplate chrome, then tries semantic article
+// containers before falling back to <main>, <body> paragraphs, and meta description.
 // The returned text is trimmed to articleContentMaxChars runes.
 func FetchArticleContent(ctx context.Context, rawURL string) (string, error) {
 	_, raw, err := FetchPageHTML(ctx, rawURL)
@@ -30,22 +30,20 @@ func FetchArticleContent(ctx context.Context, rawURL string) (string, error) {
 		return "", fmt.Errorf("parse html: %w", err)
 	}
 
-	// Strategy 1: <article> tag — most news sites wrap main content here.
-	if text := extractTextFromSelector(doc, "article"); text != "" {
-		return trimToMaxRunes(text, articleContentMaxChars), nil
+	doc.Find("script, style, noscript, nav, footer, aside, .related-posts, .comments, .newsletter, .advertisement").Remove()
+
+	for _, sel := range []string{"[itemprop='articleBody']", "article", ".entry-content", ".article-body", ".post-content", "main"} {
+		if text := extractTextFromSelector(doc, sel); text != "" {
+			return trimToMaxRunes(text, articleContentMaxChars), nil
+		}
 	}
 
-	// Strategy 2: <main> tag.
-	if text := extractTextFromSelector(doc, "main"); text != "" {
-		return trimToMaxRunes(text, articleContentMaxChars), nil
-	}
-
-	// Strategy 3: all <p> tags in <body>.
+	// Fallback: all substantial <p> tags in <body>.
 	if text := extractAllParagraphs(doc); text != "" {
 		return trimToMaxRunes(text, articleContentMaxChars), nil
 	}
 
-	// Strategy 4: meta description.
+	// Final fallback: meta description.
 	if desc := extractMetaDescription(doc); desc != "" {
 		return desc, nil
 	}

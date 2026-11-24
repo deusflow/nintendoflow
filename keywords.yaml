@@ -77,25 +77,25 @@ topics:
         role: anchor
         weight: 25
 
-      # Платформна екосистема, прошивки, сервіси
-      - word: "nintendo switch online"
+      # Бізнес, угоди, студії
+      - word: "acquisition"
         role: anchor
         weight: 30
-      - word: "nso"
+      - word: "operating profit"
         role: anchor
-        weight: 25
-      - word: "firmware update"
+        weight: 30
+      - word: "quarterly"
         role: anchor
-        weight: 25
-      - word: "system update"
+        weight: 22
+      - word: "retro studios"
         role: anchor
-        weight: 25
-      - word: "backward compatibility"
+        weight: 22
+      - word: "monolith soft"
         role: anchor
-        weight: 35
-      - word: "nintendo account"
+        weight: 22
+      - word: "next level games"
         role: anchor
-        weight: 25
+        weight: 22
 
       # Захист IP, патенти, суди
       - word: "patent infringement"
@@ -123,7 +123,10 @@ topics:
         role: anchor
         weight: 25
 
-      # Культура, музей, парки, фільми
+  culture_media:
+    enabled: true
+    priority: 135
+    keywords:
       - word: "nintendo museum"
         role: anchor
         weight: 35
@@ -139,6 +142,12 @@ topics:
       - word: "mario movie"
         role: anchor
         weight: 30
+      - word: "theme park"
+        role: anchor
+        weight: 25
+      - word: "illumination"
+        role: anchor
+        weight: 22
 
   platform:
     enabled: true
@@ -150,18 +159,39 @@ topics:
       - word: "switch oled"
         role: anchor
         weight: 22
+      - word: "nintendo switch online"
+        role: anchor
+        weight: 20
+      - word: "nso"
+        role: anchor
+        weight: 16
+      - word: "firmware update"
+        role: anchor
+        weight: 25
+      - word: "system update"
+        role: anchor
+        weight: 25
+      - word: "backward compatibility"
+        role: anchor
+        weight: 30
+      - word: "nintendo account"
+        role: anchor
+        weight: 20
       - word: "eshop"
         role: anchor
-        weight: 18
+        weight: 15
       - word: "eshop sale"
         role: anchor
-        weight: 12
+        weight: 8
 
   hardware_anchor:
     enabled: true
     priority: 120
     keywords:
       - word: "switch 2"
+        role: anchor
+        weight: 35
+      - word: "switch2"
         role: anchor
         weight: 35
       - word: "nintendo switch 2"
@@ -191,6 +221,177 @@ topics:
       - word: "dlss" # технология улучшения графики
         role: tech
         weight: 85
+      - word: "dlss 4"
+        role: tech
+        weight: 95
+      - word: "dlss4"
+        role: tech
+        weight: 95
+      - word: "tiny dlss"
+        role: tech
+        weight: 95
+      - word: "transformer model"
+        role: tech
+        weight: 85
+      - word: "preset k"
+        role: tech
+        weight: 85
+      - word: "preset m"
+        role: tech
+        weight: 85
+      - word: "ray reconstruction"
+        role: tech
+        weight: 80
+      - word: "frame generation"
+        role: tech
+        weight: 80
+      - word: "upscaling"
+        role: tech
+        weight: 75
+      - word: "upscaler"
+        role: tech
+        weight: 75
+      - word: "datamining"
+        role: tech
+        weight: 85
+      - word: "datamine"
+        role: tech
+        weight: 85
+      - word: "datamined"
+        role: tech
+        weight: 85
+      - word: "system files"
+        role: tech
+        weight: 80
+      - word: "sdk"
+        role: tech
+        weight: 75
+      - word: "devkit"
+        role: tech
+        weight: 75
+      - word: "dev kit"
+        role: tech
+        weight: 75
+      - word: "tegra t239"
+        role: tech
+        weight: 85
+      - word: "t239"
+        role: tech
+        weight: 80
+      - word: "120fps"
+        role: tech
+        weight: 72
+      - word: "120hz"
+        role: tech
+        weight: 70
+      - word: "vrr"
+        role: tech
+        weight: 70
+      - word: "hdr10"
+        role: tech
+        weight: 68
+      - word: "soc"
+        role: tech
+        weight: 75
+      - word: "chipset"
+        role: tech
+        weight: 75
+      - word: "silicon"
+        role: tech
+        weight: 75
+      - word: "die shot"
+        role: tech
+        weight: 85
+      - word: "teardown"
+        role: tech
+        weight: 82
+      - word: "lpddr5x"
+        role: tech
+        weight: 80
+      - word: "lpddr5"
+        role: tech
+        weight: 75
+      - word: "ufs 3.1"
+        role: tech
+        weight: 75
+      - word: "microsd express"
+        role: tech
+        weight: 80
+      - word: "game-key card"
+        role: tech
+        weight: 75
+      - word: "nvn"
+        role: tech
+        weight: 80
+      - word: "nvn2"
+        role: tech
+        weight: 85
+      - word: "nvdec"
+        role: tech
+        weight: 75
+      - word: "tensor core"
+        role: tech
+        weight: 80
+      - word: "tensor cores"
+        role: tech
+        weight: 80
+      - word: "neural rendering"
+        role: tech
+        weight: 82
+      - word: "memory bandwidth"
+        role: tech
+        weight: 78
+      - word: "gpu driver"
+        role: tech
+        weight: 78
+      - word: "shader cache"
+        role: tech
+        weight: 75
+      - word: "overclock"
+        role: tech
+        weight: 75
+      - word: "undocumented"
+        role: tech
+        weight: 82
+      - word: "secret feature"
+        role: tech
+        weight: 80
+      - word: "hidden feature"
+        role: tech
+        weight: 82
+      - word: "hidden mode"
+        role: tech
+        weight: 80
+      - word: "found in files"
+        role: tech
+        weight: 78
+      - word: "discovered in files"
+        role: tech
+        weight: 80
+      - word: "reverse engineering"
+        role: tech
+        weight: 80
+      - word: "reverse engineered"
+        role: tech
+        weight: 80
+      - word: "decompilation"
+        role: tech
+        weight: 75
+      - word: "firmware analysis"
+        role: tech
+        weight: 82
+      - word: "firmware notes"
+        role: tech
+        weight: 72
+      - word: "fcc filing"
+        role: tech
+        weight: 82
+      - word: "bluetooth sig"
+        role: tech
+        weight: 75
+      - word: "modders unlock"
+        role: tech
+        weight: 80
       - word: "clock speed" # частота процессора
         role: tech
         weight: 80
@@ -293,38 +494,53 @@ topics:
 
   franchises:
     enabled: true
-    priority: 70
+    priority: 65
     keywords:
       - word: "mario"
         role: anchor
-        weight: 20
+        weight: 16
       - word: "zelda"
         role: anchor
-        weight: 20
+        weight: 16
       - word: "pokemon"
         role: anchor
-        weight: 18
+        weight: 15
       - word: "metroid"
         role: anchor
-        weight: 18
+        weight: 15
       - word: "splatoon"
         role: anchor
-        weight: 18
+        weight: 14
       - word: "animal crossing"
         role: anchor
-        weight: 18
+        weight: 14
       - word: "mario kart"
         role: anchor
-        weight: 20
+        weight: 16
       - word: "super smash bros"
         role: anchor
-        weight: 18
+        weight: 15
+      - word: "pikmin"
+        role: anchor
+        weight: 12
+      - word: "kirby"
+        role: anchor
+        weight: 12
+      - word: "fire emblem"
+        role: anchor
+        weight: 12
+      - word: "xenoblade"
+        role: anchor
+        weight: 12
+      - word: "donkey kong"
+        role: anchor
+        weight: 14
 
   events:
     enabled: true
     priority: 130
     keywords:
-      # Must-publish: крупные события всегда публикуются
+      # Must-publish: великі події Nintendo
       - word: "nintendo direct"
         role: must_publish
         weight: 100
@@ -350,8 +566,8 @@ topics:
         weight: 80
         event_tag: "indie_world"
       - word: "game awards"
-        role: must_publish
-        weight: 70
+        role: signal
+        weight: 25
         event_tag: "game_awards"
       - word: "nintendo showcase"
         role: must_publish
@@ -506,28 +722,73 @@ topics:
     keywords:
       - word: "top 10"
         role: reject
-        weight: -50
+        weight: -70
       - word: "best games of"
         role: reject
-        weight: -50
+        weight: -70
       - word: "tier list"
         role: reject
-        weight: -50
+        weight: -65
       - word: "our review"
         role: reject
-        weight: -35
+        weight: -50
       - word: "we reviewed"
         role: reject
-        weight: -35
+        weight: -50
       - word: "guide"
         role: reject
-        weight: -40
+        weight: -60
+      - word: "walkthrough"
+        role: reject
+        weight: -80
+      - word: "where to find"
+        role: reject
+        weight: -75
       - word: "how to"
         role: reject
-        weight: -40
+        weight: -50
       - word: "tips and tricks"
         role: reject
-        weight: -40
+        weight: -60
+      - word: "profile icons"
+        role: reject
+        weight: -120
+      - word: "user icons"
+        role: reject
+        weight: -120
+      - word: "icon waves"
+        role: reject
+        weight: -110
+      - word: "icons"
+        role: reject
+        weight: -85
+      - word: "nintendo music"
+        role: reject
+        weight: -95
+      - word: "added to nintendo music"
+        role: reject
+        weight: -120
+      - word: "adds soundtrack"
+        role: reject
+        weight: -95
+      - word: "eshop charts"
+        role: reject
+        weight: -95
+      - word: "weekly charts"
+        role: reject
+        weight: -90
+      - word: "uk charts"
+        role: reject
+        weight: -90
+      - word: "cosplay"
+        role: reject
+        weight: -80
+      - word: "plush"
+        role: reject
+        weight: -70
+      - word: "merchandise"
+        role: reject
+        weight: -65
   patents:
     enabled: true
     priority: 150

@@ -9,10 +9,13 @@ import (
 type Result struct {
 	Score          int
 	TechScore      int
+	ImpactScore    int
 	HasAnchor      bool
 	HasComparison  bool
 	MustPublish    bool
 	EventTag       string
+	Category       Category
+	FranchiseTag   string
 	MatchedTopics  map[string]bool
 	WeirdnessScore int
 }
@@ -51,7 +54,10 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 					result.TechScore += effective
 				case "must_publish":
 					result.MustPublish = true
-					result.HasAnchor = true
+					// Only grant anchor automatically if keyword explicitly mentions nintendo/switch.
+					if strings.Contains(word, "nintendo") || strings.Contains(word, "switch") {
+						result.HasAnchor = true
+					}
 					if kw.EventTag != "" {
 						result.EventTag = kw.EventTag
 					}
@@ -60,32 +66,36 @@ func Evaluate(title, body string, topics map[string]config.Topic) Result {
 		}
 	}
 
-	// Calculate Weirdness Score (Idea 6)
-	// If an article hits multiple completely different contexts (e.g. business + tech + anchor)
+	// Calculate Weirdness Score (cross-topic intersections like tech + business + anchor).
 	if len(result.MatchedTopics) >= 3 {
 		result.WeirdnessScore = len(result.MatchedTopics) * 10
 	}
+
+	result.Category = InferCategory(title, body, result.MatchedTopics)
+	result.FranchiseTag = ExtractFranchiseTag(title, body)
+	result.ImpactScore = CalculateImpactScore(title, body, result.Category, result)
 
 	return result
 }
 
 // ShouldPost applies the final policy gate:
-//  1. article must reach minScore
-//  2. if the feed requires an explicit Nintendo anchor, an anchor must be present
+//  1. if the feed requires an explicit Nintendo anchor, an anchor must be present
 //     unless the article has a very high technical signal score.
+//  2. must_publish events pass once Nintendo context is satisfied.
+//  3. article must reach minScore.
 func ShouldPost(title, body string, topics map[string]config.Topic, minScore int, requireAnchor bool) (Result, bool, string) {
 	result := Evaluate(title, body, topics)
-	if result.MustPublish {
-		return result, true, "must_publish_event"
-	}
-	if result.Score < minScore {
-		return result, false, "below_min_score"
-	}
 	if requireAnchor && !result.HasAnchor {
 		if result.TechScore >= strictFeedHighTechBypassScore {
 			return result, true, "accepted_via_high_tech"
 		}
 		return result, false, "missing_nintendo_anchor"
+	}
+	if result.MustPublish {
+		return result, true, "must_publish_event"
+	}
+	if result.Score < minScore {
+		return result, false, "below_min_score"
 	}
 	return result, true, "accepted"
 }

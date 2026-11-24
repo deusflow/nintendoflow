@@ -1,11 +1,11 @@
 # ============================================================
-# ІНСАЙДЕРИ
+# ІНСАЙДЕРИ ТА ІНДУСТРІЯ
 # ============================================================
 
 - url: "https://www.videogameschronicle.com/feed/"
   name: "Video Games Chronicle"
   lang: en
-  priority: 95
+  priority: 110
   active: true
   type: insider
   require_anchor: true
@@ -14,7 +14,7 @@
 - url: "https://www.gematsu.com/feed"
   name: "Gematsu"
   lang: en
-  priority: 70
+  priority: 75
   active: true
   type: media
   require_anchor: true
@@ -23,7 +23,7 @@
 - url: "https://insider-gaming.com/feed/"
   name: "Insider Gaming"
   lang: en
-  priority: 95
+  priority: 100
   active: true
   type: insider
   require_anchor: true
@@ -36,7 +36,7 @@
 - url: "https://www.nintendolife.com/feeds/latest"
   name: "Nintendo Life"
   lang: en
-  priority: 120
+  priority: 100
   active: true
   type: media
   require_anchor: false
@@ -46,7 +46,7 @@
 - url: "https://gonintendo.com/feeds/news.xml"
   name: "GoNintendo"
   lang: en
-  priority: 105
+  priority: 80
   active: true
   type: media
   require_anchor: false
@@ -55,7 +55,7 @@
 - url: "https://nintendoeverything.com/feed/"
   name: "Nintendo Everything"
   lang: en
-  priority: 90
+  priority: 75
   active: true
   type: media
   require_anchor: false
@@ -63,8 +63,62 @@
   trust_feed_date: true
 
 # ============================================================
-# МЕДІА — загальноігрові
+# МЕДІА — загальноігрові та технологічні
 # ============================================================
+
+- url: "https://www.eurogamer.net/?format=rss"
+  name: "Eurogamer"
+  lang: en
+  priority: 105
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://www.digitalfoundry.net/feed"
+  name: "Digital Foundry"
+  lang: en
+  priority: 135
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://www.gamesindustry.biz/feed"
+  name: "GamesIndustry.biz"
+  lang: en
+  priority: 130
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://www.gamedeveloper.com/rss.xml"
+  name: "Game Developer"
+  lang: en
+  priority: 110
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://feeds.arstechnica.com/arstechnica/gaming"
+  name: "Ars Technica Gaming"
+  lang: en
+  priority: 115
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: false
+
+- url: "https://www.notebookcheck.net/News.152.100.html"
+  name: "Notebookcheck Tech"
+  lang: en
+  priority: 105
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: false
 
 - url: "https://www.gamesradar.com/rss/"
   name: "GamesRadar"
@@ -75,21 +129,9 @@
   require_anchor: true
   needs_redirect_resolve: false
 
-- url: "https://www.eurogamer.net/?format=rss"
-  name: "Eurogamer"
-  lang: en
-  priority: 90
-  active: true
-  type: media
-  require_anchor: true
-  needs_redirect_resolve: false
-
 # ============================================================
 # REDDIT — JSON API
-# Reddit blocks RSS from GitHub Actions (Azure) IP ranges at the WAF level.
-# The JSON API uses a separate routing layer and is more reliable from
-# datacenter IPs, especially with REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET
-# (Application-Only OAuth2 — no user login needed).
+# Set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET to enable reliably from CI.
 # ============================================================
 
 - url: "https://www.reddit.com/r/NintendoSwitch/new.json?limit=50&raw_json=1"
@@ -123,22 +165,59 @@
   needs_redirect_resolve: false
 
 # ============================================================
-# GOOGLE NEWS RSS
+# GOOGLE NEWS RSS — СВІТ NINTENDO, ТЕХНОЛОГІЇ, ЗАЛІЗО, ПРАВО
+# (redirect resolution happens lazily for top candidates, keeping RSS fast)
 # ============================================================
 
-- url: "https://news.google.com/rss/search?q=Nintendo+(Direct+OR+Furukawa+OR+Miyamoto+OR+sales+OR+lawsuit+OR+patent+OR+Museum+OR+earnings)+when:3d&hl=en-US&gl=US&ceid=US:en"
+- url: "https://news.google.com/rss/search?q=Nintendo+(Direct+OR+Furukawa+OR+Miyamoto+OR+earnings+OR+financial+OR+president)+when:3d&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo Corporate & Direct"
   lang: en
-  priority: 130
+  priority: 135
   active: true
   type: aggregator
+  require_anchor: true
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=(Nintendo+OR+%22Switch+2%22)+(DLSS+OR+%22DLSS+4%22+OR+Nvidia+OR+Tegra+OR+%22Digital+Foundry%22+OR+datamine+OR+datamining+OR+firmware+OR+SDK+OR+hardware+OR+specs+OR+upscaling)+when:4d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Tech & Switch 2 Hardware"
+  lang: en
+  priority: 135
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=Nintendo+(patent+OR+lawsuit+OR+court+OR+copyright+OR+Palworld+OR+piracy+OR+emulator)+when:5d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo Patents & Legal"
+  lang: en
+  priority: 125
+  active: true
+  type: insider
+  require_anchor: true
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=Nintendo+(Museum+OR+Movie+OR+Film+OR+%22Super+Nintendo+World%22+OR+Illumination+OR+theme+park)+when:5d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Nintendo Culture & Movies"
+  lang: en
+  priority: 120
+  active: true
+  type: media
+  require_anchor: true
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=(site:wccftech.com+OR+site:arstechnica.com+OR+site:theverge.com+OR+site:videocardz.com)+(Nintendo+OR+%22Switch+2%22)+when:5d&hl=en-US&gl=US&ceid=US:en"
+  name: "Google News - Tech Media Switch 2"
+  lang: en
+  priority: 120
+  active: true
+  type: insider
   require_anchor: true
   needs_redirect_resolve: true
 
 - url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+(sales+OR+update+OR+games+OR+hardware)+when:3d&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo Switch 2"
   lang: en
-  priority: 80
+  priority: 85
   active: true
   type: aggregator
   require_anchor: true
@@ -147,35 +226,29 @@
 - url: "https://news.google.com/rss/search?q=Nintendo+Direct+(announce+OR+rumor+OR+recap)+when:3d&hl=en-US&gl=US&ceid=US:en"
   name: "Google News - Nintendo Direct"
   lang: en
-  priority: 90
+  priority: 95
   active: true
   type: aggregator
   require_anchor: true
   needs_redirect_resolve: true
 
-- url: "https://news.google.com/rss/search?q=Nintendo+Switch+2+Digital+Foundry+performance&hl=en-US&gl=US&ceid=US:en"
-  name: "Google News - Tech & Specs"
-  lang: en
-  priority: 75
-  active: true
-  type: aggregator
-  require_anchor: true
-  needs_redirect_resolve: true
 # ============================================================
 # БІЗНЕС ТА ТЕХНОЛОГІЇ
 # ============================================================
-- url: "https://news.google.com/rss/search?q=Nintendo+Bloomberg+business&hl=en-US&gl=US&ceid=US:en"
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Bloomberg+when:7d&hl=en-US&gl=US&ceid=US:en"
   name: "Bloomberg (via Google)"
   lang: en
-  priority: 120
+  priority: 125
   active: true
   type: insider
   require_anchor: true
   needs_redirect_resolve: true
-- url: "https://news.google.com/rss/search?q=Nintendo+Nikkei+Asia&hl=en-US&gl=US&ceid=US:en"
+
+- url: "https://news.google.com/rss/search?q=Nintendo+Nikkei+when:7d&hl=en-US&gl=US&ceid=US:en"
   name: "Nikkei Asia (via Google)"
   lang: en
-  priority: 120
+  priority: 125
   active: true
   type: insider
   require_anchor: true
@@ -184,20 +257,30 @@
 # ============================================================
 # ЯПОНСЬКІ БЛОГИ / ЗМІ
 # ============================================================
+
 - url: "https://topics.nintendo.co.jp/rss"
   name: "Nintendo JP Topics"
   lang: jp
   priority: 80
-  active: true
+  active: false
   type: media
   require_anchor: false
   needs_redirect_resolve: false
   trust_feed_date: true
 
-- url: "https://news.google.com/rss/search?q=site:famitsu.com+Nintendo&hl=ja&gl=JP&ceid=JP:ja"
+- url: "https://news.google.com/rss/search?q=site:topics.nintendo.co.jp+when:5d&hl=ja&gl=JP&ceid=JP:ja"
+  name: "Nintendo JP Topics (via Google)"
+  lang: jp
+  priority: 105
+  active: true
+  type: media
+  require_anchor: false
+  needs_redirect_resolve: true
+
+- url: "https://news.google.com/rss/search?q=site:famitsu.com+Nintendo+when:3d&hl=ja&gl=JP&ceid=JP:ja"
   name: "Famitsu"
   lang: jp
-  priority: 85
+  priority: 90
   active: true
   type: media
   require_anchor: true
@@ -206,7 +289,7 @@
 - url: "https://automaton-media.com/feed/"
   name: "Automaton"
   lang: jp
-  priority: 85
+  priority: 95
   active: true
   type: media
   require_anchor: true

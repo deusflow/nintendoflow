@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/deuswork/nintendoflow/pkg/dedup"
 )
 
 const (
@@ -36,6 +39,13 @@ type Article struct {
 	SourceName         string
 	SourceType         string
 	ArticleType        string
+	Category           string
+	FranchiseTag       string
+	TitleNorm          string
+	StoryClusterKey    string
+	ConcreteAnchor     string
+	AudienceScore      int
+	Embedding          []float32
 	Score              int
 	PostedTG           bool
 	PostedThreads      bool
@@ -64,16 +74,29 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 	if status == "" {
 		status = StatusPending
 	}
+	var embParam interface{}
+	if len(a.Embedding) > 0 {
+		if raw, err := json.Marshal(a.Embedding); err == nil {
+			embParam = string(raw)
+		}
+	}
 	var id int
 	err := db.QueryRowContext(ctx, `
 		INSERT INTO articles
-			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, article_type, score, status, published_at, event_tag)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+			(source_url, url_hash, title_hash, content_hash, title_raw, video_url, image_url, source_name, source_type, article_type, score, status, published_at, event_tag, category, franchise_tag, title_norm, story_cluster_key, concrete_anchor, audience_score, embedding)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb)
 		ON CONFLICT (source_url) DO UPDATE
 		SET score=GREATEST(articles.score, EXCLUDED.score),
 			video_url=COALESCE(NULLIF(EXCLUDED.video_url,''), articles.video_url),
 			image_url=COALESCE(NULLIF(EXCLUDED.image_url,''), articles.image_url),
 			article_type=COALESCE(NULLIF(articles.article_type,''), EXCLUDED.article_type),
+			category=COALESCE(NULLIF(EXCLUDED.category,''), articles.category),
+			franchise_tag=COALESCE(NULLIF(EXCLUDED.franchise_tag,''), articles.franchise_tag),
+			title_norm=COALESCE(NULLIF(EXCLUDED.title_norm,''), articles.title_norm),
+			story_cluster_key=COALESCE(NULLIF(EXCLUDED.story_cluster_key,''), articles.story_cluster_key),
+			concrete_anchor=COALESCE(NULLIF(EXCLUDED.concrete_anchor,''), articles.concrete_anchor),
+			audience_score=GREATEST(articles.audience_score, EXCLUDED.audience_score),
+			embedding=COALESCE(EXCLUDED.embedding, articles.embedding),
 			status=CASE
 				WHEN articles.status IN ('published', 'rejected') THEN articles.status
 				ELSE EXCLUDED.status
@@ -82,6 +105,7 @@ func InsertArticle(ctx context.Context, db *sql.DB, a Article) (int, error) {
 		RETURNING id`,
 		a.SourceURL, a.URLHash, a.TitleHash, a.ContentHash, a.TitleRaw, nullStr(a.VideoURL), nullStr(a.ImageURL),
 		a.SourceName, a.SourceType, nullStr(a.ArticleType), a.Score, status, a.PublishedAt, nullStr(a.EventTag),
+		a.Category, a.FranchiseTag, a.TitleNorm, a.StoryClusterKey, a.ConcreteAnchor, a.AudienceScore, embParam,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -351,7 +375,8 @@ func FetchRecentDedupTexts(ctx context.Context, db *sql.DB, hours int) ([]string
 	return result, nil
 }
 
-// FetchRecentPublishedTitles returns titles of published articles in the last 'hours'.
+// FetchRecentPublishedTitles returns titles of published and pending-moderation articles in the last 'hours'
+// so same-day runs do not re-select an unmoderated story already awaiting review.
 func FetchRecentPublishedTitles(ctx context.Context, db *sql.DB, hours int) ([]string, error) {
 	if db == nil {
 		return nil, nil
@@ -360,11 +385,11 @@ func FetchRecentPublishedTitles(ctx context.Context, db *sql.DB, hours int) ([]s
 		SELECT title_raw
 		FROM articles
 		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
-		  AND (status = $2 OR posted_tg = true)
+		  AND (status IN ($2, $3, $4) OR posted_tg = true)
 		  AND title_raw IS NOT NULL
 		  AND title_raw <> ''
 		ORDER BY created_at DESC
-		LIMIT 100`, hours, StatusPublished)
+		LIMIT 120`, hours, StatusPublished, StatusPending, StatusNeedsEdit)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +404,190 @@ func FetchRecentPublishedTitles(ctx context.Context, db *sql.DB, hours int) ([]s
 		titles = append(titles, t)
 	}
 	return titles, rows.Err()
+}
+
+// FetchRecentStories loads multi-tier semantic dedup metadata for recent pending, published, and recently rejected stories.
+func FetchRecentStories(ctx context.Context, db *sql.DB, hours int) ([]dedup.RecentStory, error) {
+	if db == nil {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT id,
+		       COALESCE(title_raw, ''),
+		       COALESCE(title_norm, ''),
+		       COALESCE(content_hash, ''),
+		       COALESCE(category, ''),
+		       COALESCE(franchise_tag, ''),
+		       COALESCE(story_cluster_key, ''),
+		       COALESCE(concrete_anchor, ''),
+		       embedding,
+		       COALESCE(status, ''),
+		       created_at
+		FROM articles
+		WHERE (
+			(created_at > NOW() - ($1::int * INTERVAL '1 hour') AND status IN ($2, $3, $4))
+			OR (created_at > NOW() - INTERVAL '48 hours' AND status = $5 AND COALESCE(story_cluster_key, '') <> '')
+		)
+		ORDER BY created_at DESC
+		LIMIT 300`, hours, StatusPublished, StatusPending, StatusNeedsEdit, StatusRejected)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var stories []dedup.RecentStory
+	for rows.Next() {
+		var s dedup.RecentStory
+		var embBytes []byte
+		if err := rows.Scan(
+			&s.ID, &s.TitleRaw, &s.TitleNorm, &s.ContentHash,
+			&s.Category, &s.FranchiseTag, &s.StoryClusterKey, &s.ConcreteAnchor,
+			&embBytes, &s.Status, &s.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if len(embBytes) > 0 {
+			var vec []float32
+			if err := json.Unmarshal(embBytes, &vec); err == nil {
+				s.Embedding = vec
+			}
+		}
+		stories = append(stories, s)
+	}
+	return stories, rows.Err()
+}
+
+// HasContentHash checks if an identical content_hash was already stored within lookback hours.
+func HasContentHash(ctx context.Context, db *sql.DB, contentHash string, hours int) (bool, error) {
+	if db == nil || strings.TrimSpace(contentHash) == "" {
+		return false, nil
+	}
+	var exists bool
+	err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM articles
+			WHERE content_hash = $1
+			  AND created_at > NOW() - ($2::int * INTERVAL '1 hour')
+			  AND status IN ($3, $4, $5)
+		)`, contentHash, hours, StatusPublished, StatusPending, StatusNeedsEdit).Scan(&exists)
+	return exists, err
+}
+
+// FetchRecentCategoryHistory returns the categories of the most recent N non-highlight articles.
+func FetchRecentCategoryHistory(ctx context.Context, db *sql.DB, limit int) ([]string, error) {
+	if db == nil {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT COALESCE(category, '')
+		FROM articles
+		WHERE COALESCE(source_type, '') <> 'highlight'
+		  AND status IN ($1, $2, $3)
+		  AND COALESCE(category, '') <> ''
+		ORDER BY created_at DESC
+		LIMIT $4`, StatusPublished, StatusPending, StatusNeedsEdit, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var cats []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		cats = append(cats, c)
+	}
+	return cats, rows.Err()
+}
+
+// FetchRecentFranchiseCounts counts how often each franchise_tag appeared within lookback hours.
+func FetchRecentFranchiseCounts(ctx context.Context, db *sql.DB, hours int) (map[string]int, error) {
+	if db == nil {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT franchise_tag, COUNT(*)
+		FROM articles
+		WHERE created_at > NOW() - ($1::int * INTERVAL '1 hour')
+		  AND status IN ($2, $3, $4)
+		  AND COALESCE(franchise_tag, '') <> ''
+		GROUP BY franchise_tag`, hours, StatusPublished, StatusPending, StatusNeedsEdit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var tag string
+		var cnt int
+		if err := rows.Scan(&tag, &cnt); err != nil {
+			return nil, err
+		}
+		counts[tag] = cnt
+	}
+	return counts, rows.Err()
+}
+
+// GetState retrieves a string value by key from bot_state.
+func GetState(ctx context.Context, db *sql.DB, key string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	var val string
+	err := db.QueryRowContext(ctx, `SELECT value FROM bot_state WHERE key=$1`, key).Scan(&val)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return val, err
+}
+
+// SetState upserts a key/value pair into bot_state.
+func SetState(ctx context.Context, db *sql.DB, key, value string) error {
+	if db == nil {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO bot_state (key, value, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (key) DO UPDATE
+		SET value=EXCLUDED.value, updated_at=NOW()`, key, value)
+	return err
+}
+
+// GetCachedAITranslation retrieves a cached AI JSON response if fresh within ttlHours.
+func GetCachedAITranslation(ctx context.Context, db *sql.DB, urlHash string, ttlHours int) (string, string, bool, error) {
+	if db == nil || urlHash == "" {
+		return "", "", false, nil
+	}
+	var payload, provider string
+	err := db.QueryRowContext(ctx, `
+		SELECT payload_json, provider
+		FROM ai_translation_cache
+		WHERE url_hash = $1
+		  AND created_at > NOW() - ($2::int * INTERVAL '1 hour')`, urlHash, ttlHours).Scan(&payload, &provider)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return payload, provider, true, nil
+}
+
+// SaveCachedAITranslation stores an AI JSON response keyed by url_hash.
+func SaveCachedAITranslation(ctx context.Context, db *sql.DB, urlHash, payloadJSON, provider string) error {
+	if db == nil || urlHash == "" || payloadJSON == "" {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO ai_translation_cache (url_hash, payload_json, provider, created_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (url_hash) DO UPDATE
+		SET payload_json=EXCLUDED.payload_json, provider=EXCLUDED.provider, created_at=NOW()`, urlHash, payloadJSON, provider)
+	return err
 }
 
 

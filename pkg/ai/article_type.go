@@ -13,35 +13,72 @@ const (
 )
 
 type GeneratedPost struct {
-	Skip         bool   `json:"skip"`
-	Reason       string `json:"reason,omitempty"`
-	Type         string `json:"type"`
-	TelegramHTML string `json:"telegram_html"`
-	ThreadsText  string `json:"threads_text"`
+	Skip            bool   `json:"skip"`
+	Reason          string `json:"reason,omitempty"`
+	Type            string `json:"type"`
+	Category        string `json:"category,omitempty"`
+	StoryClusterKey string `json:"story_cluster_key,omitempty"`
+	ConcreteAnchor  string `json:"concrete_anchor,omitempty"`
+	AudienceScore   int    `json:"audience_score,omitempty"`
+	TelegramHTML    string `json:"telegram_html"`
+	ThreadsText     string `json:"threads_text"`
 }
 
 // ParseJSONPost extracts the JSON block from the text and parses it.
-// It handles potential markdown formatting blocks like ```json ... ```.
+// It handles reasoning tags, markdown formatting blocks like ```json ... ```, and trailing prose.
 func ParseJSONPost(text string) (GeneratedPost, error) {
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end < start {
+	cleaned := SanitizeJSON(text)
+	if !strings.HasPrefix(cleaned, "{") {
 		// Attempt fallback parsing if JSON is completely missing but "SKIP" is there
 		if strings.Contains(strings.ToUpper(text), "SKIP") {
 			return GeneratedPost{Skip: true, Reason: "model output contains SKIP without JSON"}, nil
 		}
-		return GeneratedPost{}, json.Unmarshal([]byte(text), &GeneratedPost{}) // return parsing error
+		return GeneratedPost{}, json.Unmarshal([]byte(cleaned), &GeneratedPost{}) // return parsing error
 	}
-	
-	jsonStr := text[start : end+1]
+
 	var post GeneratedPost
-	err := json.Unmarshal([]byte(jsonStr), &post)
+	err := json.Unmarshal([]byte(cleaned), &post)
 	if err != nil {
 		return GeneratedPost{}, err
 	}
-	
+
 	post.Type = NormalizeArticleType(post.Type)
+	post.Category = NormalizeCategory(post.Category)
+	post.StoryClusterKey = normalizeClusterKey(post.StoryClusterKey)
+	post.ConcreteAnchor = strings.TrimSpace(post.ConcreteAnchor)
 	return post, nil
+}
+
+// NormalizeCategory constrains AI-emitted categories to canonical taxonomy buckets.
+func NormalizeCategory(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "company", "business", "corporate", "finance", "financial":
+		return "company"
+	case "tech", "hardware", "technology", "specs", "silicon":
+		return "tech"
+	case "legal", "lawsuit", "ip", "patent", "patents", "piracy":
+		return "legal"
+	case "ecosystem", "nso", "firmware", "system", "eshop", "service":
+		return "ecosystem"
+	case "culture", "movie", "film", "museum", "theme_park", "merch", "music":
+		return "culture"
+	case "direct", "event", "showcase", "announcement":
+		return "direct"
+	case "games", "game", "gaming", "release":
+		return "games"
+	default:
+		return ""
+	}
+}
+
+func normalizeClusterKey(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.ReplaceAll(s, "_", "-")
+	s = strings.ReplaceAll(s, " ", "-")
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
 }
 
 // ParseTypedPost extracts optional TYPE: marker and returns (type, body).

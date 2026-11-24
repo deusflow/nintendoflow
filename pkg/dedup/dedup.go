@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/deuswork/nintendoflow/pkg/ai/embedding"
 )
 
 var tokenRe = regexp.MustCompile(`[a-z0-9]+`)
@@ -386,4 +389,125 @@ func extractFirstWords(text string, count int) string {
 		words = words[:count]
 	}
 	return strings.Join(words, " ")
+}
+
+var (
+	reNonAlnum    = regexp.MustCompile(`[^a-z0-9\s]+`)
+	reDigitsToken = regexp.MustCompile(`\d+(?:[.,]\d+)?`)
+	outletSuffix  = regexp.MustCompile(`(?i)\s+(?:-|\||—)\s+(?:nintendo life|nintendo everything|gonintendo|vgc|video games chronicle|eurogamer|gamesradar\+?|insider gaming|gematsu|automaton|famitsu|bloomberg|nikkei asia|nikkei|wccftech|videocardz|ars technica|the verge|ign|kotaku|polygon|gamespot|nintendo insider|switchup)\s*$`)
+)
+
+// RecentStory holds prior-run dedup metadata loaded from PostgreSQL.
+type RecentStory struct {
+	ID              int
+	TitleRaw        string
+	TitleNorm       string
+	ContentHash     string
+	Category        string
+	FranchiseTag    string
+	StoryClusterKey string
+	ConcreteAnchor  string
+	Embedding       []float32
+	Status          string
+	CreatedAt       time.Time
+}
+
+// StripPublisherSuffix trims trailing " - Publisher" suffixes added by Google News or RSS aggregators.
+func StripPublisherSuffix(title string) string {
+	return strings.TrimSpace(outletSuffix.ReplaceAllString(strings.TrimSpace(title), ""))
+}
+
+// NormalizeTitleForDedup normalizes a headline into canonical ASCII words after stripping publisher suffixes.
+func NormalizeTitleForDedup(title string) string {
+	clean := strings.ToLower(StripPublisherSuffix(title))
+	clean = strings.NewReplacer("'", "", "`", "", "’", "", "&amp;", " and ", "&", " and ").Replace(clean)
+	clean = reNonAlnum.ReplaceAllString(clean, " ")
+	fields := strings.Fields(clean)
+	return strings.Join(fields, " ")
+}
+
+// GenerateContentHashWithNumbers creates a resilient content hash combining normalized title words,
+// sorted numeric tokens, and normalized body prefix.
+func GenerateContentHashWithNumbers(title, body string) string {
+	normTitle := NormalizeTitleForDedup(title)
+	combined := strings.ToLower(title + " " + body)
+	nums := reDigitsToken.FindAllString(combined, -1)
+	sort.Strings(nums)
+	bodyNorm := NormalizeTitleForDedup(body)
+	if len(bodyNorm) > 300 {
+		bodyNorm = bodyNorm[:300]
+	}
+	payload := normTitle + "|" + strings.Join(nums, ",") + "|" + bodyNorm
+	h := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(h[:])
+}
+
+// CheckSemanticDuplicate evaluates multi-tier similarity against recent published/pending stories:
+// 1. Exact normalized title or content hash
+// 2. Semantic story_cluster_key Jaccard match (>= 0.60 with >= 2 shared tokens)
+// 3. Gemini embedding cosine similarity (>= 0.85 standalone, or >= 0.78 with topic/cluster corroboration)
+// 4. Title token Jaccard fallback (>= 0.58)
+func CheckSemanticDuplicate(titleRaw, titleNorm, contentHash, clusterKey string, emb []float32, recent []RecentStory) (bool, string) {
+	if titleNorm == "" {
+		titleNorm = NormalizeTitleForDedup(titleRaw)
+	}
+	cleanRaw := StripPublisherSuffix(titleRaw)
+
+	for _, r := range recent {
+		if HasConflictingDateMarkers(cleanRaw, StripPublisherSuffix(r.TitleRaw)) {
+			continue
+		}
+		if titleNorm != "" && r.TitleNorm != "" && titleNorm == r.TitleNorm {
+			return true, fmt.Sprintf("exact_title_norm:%d", r.ID)
+		}
+		if contentHash != "" && r.ContentHash != "" && contentHash == r.ContentHash {
+			return true, fmt.Sprintf("exact_content_hash:%d", r.ID)
+		}
+		if clusterKey != "" && r.StoryClusterKey != "" {
+			keySim := embedding.ClusterKeySimilarity(clusterKey, r.StoryClusterKey)
+			shared := sharedSubstantiveClusterTokens(clusterKey, r.StoryClusterKey)
+			if (keySim >= 0.60 && shared >= 2) || (shared >= 3 && keySim >= 0.38) {
+				return true, fmt.Sprintf("cluster_key(%.2f,shared=%d):%s", keySim, shared, r.StoryClusterKey)
+			}
+		}
+		if len(emb) > 0 && len(r.Embedding) > 0 {
+			cos := embedding.CosineSimilarity(emb, r.Embedding)
+			if cos >= 0.85 {
+				return true, fmt.Sprintf("embedding(%.2f):%d", cos, r.ID)
+			}
+			if cos >= 0.78 {
+				keySim := embedding.ClusterKeySimilarity(clusterKey, r.StoryClusterKey)
+				titleSim := Similarity(cleanRaw, StripPublisherSuffix(r.TitleRaw))
+				if keySim >= 0.40 || titleSim >= 0.35 {
+					return true, fmt.Sprintf("embedding_hybrid(cos=%.2f,key=%.2f,title=%.2f):%d", cos, keySim, titleSim, r.ID)
+				}
+			}
+		}
+		if cleanRaw != "" && r.TitleRaw != "" {
+			if sim := Similarity(cleanRaw, StripPublisherSuffix(r.TitleRaw)); sim >= 0.58 {
+				return true, fmt.Sprintf("title_jaccard(%.2f):%d", sim, r.ID)
+			}
+		}
+	}
+	return false, ""
+}
+
+var genericClusterTokens = map[string]bool{
+	"nintendo": true, "switch": true, "switch2": true, "game": true, "games": true,
+	"news": true, "update": true, "new": true, "official": true, "report": true, "rumor": true,
+}
+
+func sharedSubstantiveClusterTokens(a, b string) int {
+	tA := embedding.TokenizeClusterKey(a)
+	tB := embedding.TokenizeClusterKey(b)
+	count := 0
+	for k := range tA {
+		if genericClusterTokens[k] {
+			continue
+		}
+		if _, ok := tB[k]; ok {
+			count++
+		}
+	}
+	return count
 }

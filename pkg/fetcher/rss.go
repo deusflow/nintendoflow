@@ -32,19 +32,29 @@ func init() {
 
 // Item is a normalised article fetched from an RSS feed.
 type Item struct {
-	Title             string
-	Link              string
-	Description       string
-	VideoURL          string
-	ImageURL          string
-	PublishedAt       *time.Time
-	SourcePublishedAt *time.Time
-	SourceName        string
-	SourcePriority    int
-	SourceType        string
-	RequireAnchor     bool
-	ContentHash       string
-	TrustFeedDate     bool
+	Title                string
+	Link                 string
+	Description          string
+	VideoURL             string
+	ImageURL             string
+	PublishedAt          *time.Time
+	SourcePublishedAt    *time.Time
+	SourceName           string
+	SourcePriority       int
+	SourceType           string
+	RequireAnchor        bool
+	ContentHash          string
+	TrustFeedDate        bool
+	NeedsRedirectResolve bool
+}
+
+// FeedStatus records the outcome of fetching a single feed for health monitoring.
+type FeedStatus struct {
+	FeedName   string
+	FeedURL    string
+	FetchMode  string
+	ItemCount  int
+	ErrMessage string
 }
 
 // FetchAll fetches all active feeds and returns collected items.
@@ -52,6 +62,12 @@ type Item struct {
 // interDomainDelay pause between them. Feeds on different hostnames run
 // in parallel goroutines so the overall fetch stays fast.
 func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
+	items, _ := FetchAllDetailed(ctx, feeds)
+	return items
+}
+
+// FetchAllDetailed fetches all active feeds and returns both collected items and per-feed health statuses.
+func FetchAllDetailed(ctx context.Context, feeds []config.Feed) ([]Item, []FeedStatus) {
 	// Group feeds by hostname so same-domain requests are serialised.
 	groups := make(map[string][]config.Feed)
 	for _, f := range feeds {
@@ -60,9 +76,10 @@ func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
 	}
 
 	var (
-		mu    sync.Mutex
-		items []Item
-		wg    sync.WaitGroup
+		mu       sync.Mutex
+		items    []Item
+		statuses []FeedStatus
+		wg       sync.WaitGroup
 	)
 
 	for domain, group := range groups {
@@ -88,19 +105,30 @@ func FetchAll(ctx context.Context, feeds []config.Feed) []Item {
 					result, err = fetchSource(feedCtx, f)
 				}
 				cancel()
-				if err != nil {
-					slog.Warn("fetch source failed", "source", f.Name, "fetch_mode", f.FetchMode, "error", err)
-					continue
+
+				status := FeedStatus{
+					FeedName:  f.Name,
+					FeedURL:   f.URL,
+					FetchMode: f.FetchMode,
+					ItemCount: len(result),
 				}
+				if err != nil {
+					status.ErrMessage = err.Error()
+					slog.Warn("fetch source failed", "source", f.Name, "fetch_mode", f.FetchMode, "error", err)
+				}
+
 				mu.Lock()
-				items = append(items, result...)
+				statuses = append(statuses, status)
+				if err == nil {
+					items = append(items, result...)
+				}
 				mu.Unlock()
 			}
 		}(domain, group)
 	}
 
 	wg.Wait()
-	return items
+	return items, statuses
 }
 
 // extractDomain returns the hostname of rawURL, used as the grouping key for
@@ -145,13 +173,9 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 
 	var items []Item
 	for _, entry := range feed.Items {
+		// Leave Google News redirect resolution lazy until top-candidate selection/scraping;
+		// resolving hundreds of Google News links eagerly inside FetchAll blows the 50s timeout.
 		link := entry.Link
-		if f.NeedsRedirectResolve {
-			resolved, err := ResolveRedirect(link)
-			if err == nil {
-				link = resolved
-			}
-		}
 
 		imgURL := ""
 		if entry.Image != nil {
@@ -168,18 +192,19 @@ func fetchSource(ctx context.Context, f config.Feed) ([]Item, error) {
 		hash := hashContent(entry.Title + entry.Description)
 
 		items = append(items, Item{
-			Title:          entry.Title,
-			Link:           link,
-			Description:    entry.Description,
-			VideoURL:       vidURL,
-			ImageURL:       imgURL,
-			PublishedAt:    pub,
-			SourceName:     f.Name,
-			SourcePriority: f.Priority,
-			SourceType:     f.Type,
-			RequireAnchor:  f.RequireAnchor,
-			ContentHash:    hash,
-			TrustFeedDate:  f.TrustFeedDate,
+			Title:                entry.Title,
+			Link:                 link,
+			Description:          entry.Description,
+			VideoURL:             vidURL,
+			ImageURL:             imgURL,
+			PublishedAt:          pub,
+			SourceName:           f.Name,
+			SourcePriority:       f.Priority,
+			SourceType:           f.Type,
+			RequireAnchor:        f.RequireAnchor,
+			ContentHash:          hash,
+			TrustFeedDate:        f.TrustFeedDate,
+			NeedsRedirectResolve: f.NeedsRedirectResolve,
 		})
 	}
 	return items, nil

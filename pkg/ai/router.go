@@ -63,8 +63,19 @@ func BuildProvidersFromConfig(ctx context.Context, path string) ([]AIProvider, e
 		if apiKeyEnv == "" {
 			return nil, fmt.Errorf("AI router config model %q has empty api_key_env", modelCfg.Name)
 		}
-		apiKey := strings.TrimSpace(os.Getenv(apiKeyEnv))
-		if apiKey == "" {
+
+		// Collect primary key plus optional numbered backup keys (<ENV>_2, <ENV>_3).
+		type keySlot struct {
+			key    string
+			suffix string
+		}
+		var keys []keySlot
+		for _, suffix := range []string{"", "_2", "_3"} {
+			if k := strings.TrimSpace(os.Getenv(apiKeyEnv + suffix)); k != "" {
+				keys = append(keys, keySlot{key: k, suffix: suffix})
+			}
+		}
+		if len(keys) == 0 {
 			slog.Warn("AI model enabled but API key env is empty, skipping",
 				"name", modelCfg.Name,
 				"api_key_env", apiKeyEnv,
@@ -72,11 +83,13 @@ func BuildProvidersFromConfig(ctx context.Context, path string) ([]AIProvider, e
 			continue
 		}
 
-		provider, err := buildProvider(ctx, name, modelCfg, apiKey)
-		if err != nil {
-			return nil, err
+		for _, slot := range keys {
+			provider, err := buildProvider(ctx, name, modelCfg, slot.key, slot.suffix)
+			if err != nil {
+				return nil, err
+			}
+			providers = append(providers, provider)
 		}
-		providers = append(providers, provider)
 	}
 
 	if len(providers) == 0 {
@@ -86,14 +99,14 @@ func BuildProvidersFromConfig(ctx context.Context, path string) ([]AIProvider, e
 	return providers, nil
 }
 
-func buildProvider(ctx context.Context, name string, modelCfg RouterModel, apiKey string) (AIProvider, error) {
+func buildProvider(ctx context.Context, name string, modelCfg RouterModel, apiKey, suffix string) (AIProvider, error) {
 	model := strings.TrimSpace(modelCfg.Model)
 	switch name {
 	case "gemini":
 		if model == "" {
 			model = "gemini-3.5-flash"
 		}
-		return NewGeminiProvider(ctx, apiKey, model)
+		return NewGeminiProviderWithLabel(ctx, apiKey, model, suffix)
 	case "github_models", "github-models", "github":
 		if model == "" {
 			model = "gpt-5"
@@ -103,7 +116,7 @@ func buildProvider(ctx context.Context, name string, modelCfg RouterModel, apiKe
 		if model == "" {
 			model = "openai/gpt-oss-120b"
 		}
-		return NewGroqProvider(apiKey, model, modelCfg.BaseURL), nil
+		return NewGroqProviderWithLabel(apiKey, model, modelCfg.BaseURL, suffix), nil
 	case "openrouter":
 		return NewOpenRouterProviderWithModel(apiKey, model), nil
 	default:

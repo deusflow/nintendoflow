@@ -107,8 +107,8 @@ func main() {
 	}
 	slog.Info("AI router ready", "config_path", aiConfigPath, "providers", strings.Join(providerNames, ","))
 
-	// maxAICallsPerRun=4, delay=20s between calls to respect API limits
-	manager := ai.NewManager(providers, 4, 20*time.Second)
+	// maxAICallsPerRun=8, delay=8s between calls to same provider to respect API limits
+	manager := ai.NewManager(providers, 8, 8*time.Second)
 
 	// -- 4.5. Check command-line mode ------------------------------------
 	mode := "news"

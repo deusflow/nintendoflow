@@ -119,11 +119,12 @@ func Run(ctx context.Context, database *sql.DB, manager *ai.Manager, cfg *config
 		previousGames = []string{}
 	}
 
-	var post struct {
+	type highlightPost struct {
 		GameName     string `json:"game_name"`
 		TelegramHTML string `json:"telegram_html"`
 		ThreadsText  string `json:"threads_text"`
 	}
+	var post highlightPost
 
 	now := time.Now()
 	worldFacts := ai.LoadWorldFacts("", now)
@@ -147,8 +148,8 @@ func Run(ctx context.Context, database *sql.DB, manager *ai.Manager, cfg *config
 Напиши атмосферний, живий, трохи іронічний та емоційний пост українською мовою про цю гру — так, ніби розповідаєш друзям-геймерам, чому ця гра досі виносить мозок і чому сучасним ААА-студіям варто в неї повчитися.
 
 Структура Telegram-поста (telegram_html):
-1. **Заголовок**: Почни з яскравого заголовка в тегах <b> (наприклад: <b>🎮 Super Mario 64: як Міямото навчив індустрію стрибати у 3D (N64, 1996)</b>).
-2. **Тіло**: 2 або максимум 3 абзаци (без заголовка). Фокус на геймплейній магії, курйозах або геніальних рішеннях розробки та спадщині гри станом на 2026 рік.
+1. Заголовок: Почни з яскравого заголовка в тегах <b> (наприклад: <b>🎮 Super Mario 64: як Міямото навчив індустрію стрибати у 3D (N64, 1996)</b>).
+2. Тіло: 2 або максимум 3 абзаци (без заголовка). Фокус на геймплейній магії, курйозах або геніальних рішеннях розробки та спадщині гри станом на 2026 рік.
 3. Допускається використання <b>, <i>, <tg-spoiler> (для прихованих сюжетних твістів чи пасхалок) або <blockquote expandable> (для цікавої цитати розробника).
 
 Структура Threads-поста (threads_text):
@@ -157,12 +158,14 @@ func Run(ctx context.Context, database *sql.DB, manager *ai.Manager, cfg *config
 - Довжина: СУВОРО від 400 до 495 символів. Не перевищуй 500 символів. Без HTML і Markdown.
 
 КРИТИЧНІ ПРАВИЛА:
-- **Zero Hallucinations**: Тільки 100%% реальні історичні факти.
-- **Strict Name Check**: Перевіряй українську транскрипцію японських творців (Шігеру Міямото, Сатору Івата, Ейдзі Аонума, Йошіо Сакамото, Масахіро Сакурай).
-- **game_name**: Поле "game_name" має містити ТІЛЬКИ канонічну назву гри без року та платформи (наприклад, "Metroid Prime").
-- **Output Format**: Поверни ТІЛЬКИ валідний JSON без markdown-обгорток.
+- Zero Hallucinations: Тільки 100%% реальні історичні факти.
+- Strict Name Check: Перевіряй українську транскрипцію японських творців (Шігеру Міямото, Сатору Івата, Ейдзі Аонума, Йошіо Сакамото, Масахіро Сакурай).
+- game_name: Поле "game_name" має містити ТІЛЬКИ канонічну назву гри без року та платформи (наприклад, "Metroid Prime").
+- Output Format: Поверни ТІЛЬКИ валідний JSON без markdown-обгорток і зайвого тексту.
 
-Example JSON output:
+=== КІНЕЦЬ ІНСТРУКЦІЙ ===
+
+Згенеруй валідний JSON-об'єкт для сьогоднішнього рубрикатора у такому форматі:
 {
   "game_name": "Metroid Prime",
   "telegram_html": "<b>🎮 Metroid Prime: коли техасці зробили найкращу гру Nintendo (GameCube, 2002)</b>\n\nПерший абзац про скепсис фанів і магію Retro Studios...\n\nДругий абзац про спадщину та чому вона досі виглядає крутіше за половину шутерів...",
@@ -170,21 +173,29 @@ Example JSON output:
 }
 `, now.Format("2006-01-02"), worldFacts, exclusionList, candidateHint)
 
-		rewritten, err := manager.Generate(ctx, prompt)
+		rewritten, err := manager.GenerateValidated(ctx, prompt, func(raw string) error {
+			cleaned := ai.SanitizeJSON(raw)
+			var candidate highlightPost
+			if err := json.Unmarshal([]byte(cleaned), &candidate); err != nil {
+				return fmt.Errorf("invalid highlight json: %w", err)
+			}
+			if err := ai.VerifyUkrainian(candidate.TelegramHTML); err != nil {
+				return fmt.Errorf("telegram_html failed Ukrainian check: %w", err)
+			}
+			return nil
+		})
 		if err != nil {
 			slog.Error("AI highlight generation failed", "error", err, "attempt", attempt)
 			continue
 		}
 
 		// 3. Parse AI response
-		start := strings.Index(rewritten, "{")
-		end := strings.LastIndex(rewritten, "}")
-		if start == -1 || end == -1 || end < start {
+		jsonStr := ai.SanitizeJSON(rewritten)
+		if !strings.HasPrefix(jsonStr, "{") {
 			slog.Error("failed to find JSON in AI response", "raw", rewritten, "attempt", attempt)
 			continue
 		}
 
-		jsonStr := rewritten[start : end+1]
 		if err := json.Unmarshal([]byte(jsonStr), &post); err != nil {
 			slog.Error("failed to parse AI JSON response", "error", err, "raw", jsonStr, "attempt", attempt)
 			continue

@@ -25,6 +25,7 @@ type Manager struct {
 	callsUsed          int
 	retriesUsed        int
 	lastCallByProvider map[string]time.Time
+	exhaustedUntil     map[string]time.Time
 	lastProvider       string
 }
 
@@ -37,6 +38,7 @@ func NewManager(providers []AIProvider, maxCalls int, delay time.Duration) *Mana
 		maxCalls:           maxCalls,
 		delay:              delay,
 		lastCallByProvider: make(map[string]time.Time),
+		exhaustedUntil:     make(map[string]time.Time),
 	}
 }
 
@@ -48,28 +50,102 @@ func (m *Manager) Generate(ctx context.Context, prompt string) (string, error) {
 	// One Generate invocation = one budget slot, regardless of provider retries/fallbacks.
 	m.callsUsed++
 
+	text, err := m.runProviders(ctx, prompt, nil)
+	if err != nil {
+		return "", err
+	}
+	return sanitize(text)
+}
+
+// GenerateRaw sends a prompt without the 4000-rune post truncation or SKIP sentinel conversion.
+func (m *Manager) GenerateRaw(ctx context.Context, prompt string) (string, error) {
+	if m.callsUsed >= m.maxCalls {
+		return "", ErrAICallBudgetExhausted
+	}
+	m.callsUsed++
+	return m.runProviders(ctx, prompt, nil)
+}
+
+// GenerateValidated sends a prompt and checks each provider's response with validate.
+// If validation fails (e.g. broken JSON, wrong language, hallucinated numbers), the next provider is tried.
+func (m *Manager) GenerateValidated(ctx context.Context, prompt string, validate func(string) error) (string, error) {
+	if m.callsUsed >= m.maxCalls {
+		return "", ErrAICallBudgetExhausted
+	}
+	m.callsUsed++
+
+	text, err := m.runProviders(ctx, prompt, validate)
+	if err != nil {
+		return "", err
+	}
+	return sanitize(text)
+}
+
+func (m *Manager) runProviders(ctx context.Context, prompt string, validate func(string) error) (string, error) {
 	var lastErr error
+	var lastValidationErr error
+	now := time.Now()
 
 	for _, provider := range m.providers {
-		text, err := m.generateWithProvider(ctx, provider, prompt)
-		if err == nil {
-			return sanitize(text)
-		}
-		if errorsIsContext(err) || errorsIsBudget(err) {
-			return "", err
+		if m.isOnCooldown(provider.Name(), now) {
+			slog.Info("skipping AI provider on cooldown", "provider", provider.Name())
+			continue
 		}
 
-		lastErr = err
-		slog.Warn("AI provider failed, trying next",
-			"provider", provider.Name(),
-			"error", err.Error(),
-		)
+		text, err := m.generateWithProvider(ctx, provider, prompt)
+		if err != nil {
+			if errorsIsContext(err) || errorsIsBudget(err) {
+				return "", err
+			}
+			if IsPermanentProviderError(err) {
+				m.markCooldown(provider.Name(), 30*time.Minute)
+			}
+			lastErr = err
+			slog.Warn("AI provider failed, trying next",
+				"provider", provider.Name(),
+				"error", err.Error(),
+			)
+			continue
+		}
+
+		if validate != nil {
+			if valErr := validate(text); valErr != nil {
+				lastValidationErr = valErr
+				slog.Warn("AI provider output rejected by validator, trying next",
+					"provider", provider.Name(),
+					"error", valErr.Error(),
+				)
+				continue
+			}
+		}
+
+		m.lastProvider = provider.Name()
+		return text, nil
 	}
 
+	if lastValidationErr != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidAIOutput, lastValidationErr)
+	}
 	if lastErr == nil {
 		return "", ErrAllProvidersFailed
 	}
 	return "", fmt.Errorf("%w: %v", ErrAllProvidersFailed, lastErr)
+}
+
+func (m *Manager) isOnCooldown(providerName string, now time.Time) bool {
+	if m.exhaustedUntil == nil {
+		return false
+	}
+	until, ok := m.exhaustedUntil[providerName]
+	return ok && now.Before(until)
+}
+
+func (m *Manager) markCooldown(providerName string, d time.Duration) {
+	if m.exhaustedUntil == nil {
+		m.exhaustedUntil = make(map[string]time.Time)
+	}
+	m.exhaustedUntil[providerName] = time.Now().Add(d)
+	slog.Warn("marking AI provider on run cooldown", "provider", providerName, "cooldown", d.String())
 }
 
 // CallsUsed returns how many budgeted Generate calls were spent in this run.

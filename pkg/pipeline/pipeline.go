@@ -16,6 +16,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/deuswork/nintendoflow/pkg/ai"
+	"github.com/deuswork/nintendoflow/pkg/ai/embedding"
 	"github.com/deuswork/nintendoflow/pkg/config"
 	"github.com/deuswork/nintendoflow/pkg/db"
 	"github.com/deuswork/nintendoflow/pkg/dedup"
@@ -26,9 +27,9 @@ import (
 
 const (
 	defaultPlaceholdersBaseURL = "https://deusflow.github.io/nintendoflow/assets/placeholders"
-	aggregatorFreshnessHours   = 12
-	mediaFreshnessHours        = 24
-	insiderFreshnessHours      = 36
+	aggregatorFreshnessHours   = 24
+	mediaFreshnessHours        = 36
+	insiderFreshnessHours      = 48
 	maxAgePenaltyPercent       = 60
 	defaultDedupHours          = 30 * 24 // 30 days window for deduplication
 )
@@ -38,9 +39,17 @@ type candidate struct {
 	score               int
 	rankScore           int
 	techScore           int
+	impactScore         int
 	weirdnessScore      int
 	mustPublish         bool
 	eventTag            string
+	category            scorer.Category
+	franchiseTag        string
+	hypeCount           int
+	rescuedByTriage     bool
+	scrapedBody         string
+	isPaywalled         bool
+	paywallReason       string
 	recentSimilarPosted bool
 	urlHash             string
 	titleHash           string
@@ -60,18 +69,22 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		posted         bool
 	)
 
-	// -- 5. Fetch RSS (parallel, 30s timeout) ------------------------------
+	// -- 5. Fetch RSS (parallel, lazy redirect resolution keeps FetchAll fast) --
 	fetchCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
 	defer cancel()
 
-	items := fetcher.FetchAll(fetchCtx, feeds)
+	items, feedStatuses := fetcher.FetchAllDetailed(fetchCtx, feeds)
 	fetchedCount = len(items)
 	slog.Info("fetched articles", "count", len(items))
+	if !cfg.DryRun && database != nil {
+		monitorFeedHealth(ctx, database, cfg, feedStatuses)
+	}
 	logStage("fetch", stageStart, runStart)
 	stageStart = time.Now()
 
-	// -- 6. Local filtering only (freshness + DB dedup hashes + score) ----
+	// -- 6. Local filtering + Semantic history loading -----------------------
 	candidates := make([]candidate, 0, len(items))
+	triagePool := make([]triageCandidate, 0, 25)
 	dedupHours := maxInt(cfg.RecentTitlesHours, defaultDedupHours)
 
 	knownURLs, err := db.FetchRecentURLHashes(ctx, database, dedupHours)
@@ -96,6 +109,25 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	if err != nil {
 		slog.Warn("fetch recent published titles failed", "error", err)
 	}
+	recentStories, err := db.FetchRecentStories(ctx, database, dedupHours)
+	if err != nil {
+		slog.Warn("fetch recent stories for semantic dedup failed", "error", err)
+	}
+	recentCategories, err := db.FetchRecentCategoryHistory(ctx, database, 4)
+	if err != nil {
+		slog.Warn("fetch recent category history failed", "error", err)
+	}
+	recentFranchises, err := db.FetchRecentFranchiseCounts(ctx, database, 72)
+	if err != nil {
+		slog.Warn("fetch recent franchise counts failed", "error", err)
+	}
+
+	seenTitleNorms := make(map[string]struct{}, len(recentStories))
+	for _, s := range recentStories {
+		if s.TitleNorm != "" {
+			seenTitleNorms[s.TitleNorm] = struct{}{}
+		}
+	}
 
 	for _, item := range items {
 		sourceFreshnessHours := freshnessHoursForSourceType(item.SourceType, cfg.RecentTitlesHours)
@@ -104,9 +136,17 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			continue
 		}
 
+		// Drop obvious routine noise (NSO profile icons, Nintendo Music track adds, charts, guides, reviews)
+		if noisy, noiseReason := scorer.IsRoutineNoiseTitle(item.Title); noisy {
+			slog.Debug("candidate dropped as routine noise", "reason", noiseReason, "title", item.Title)
+			continue
+		}
+
+		cleanTitle := dedup.StripPublisherSuffix(item.Title)
 		urlHash := dedup.HashURL(item.Link)
-		titleHash := dedup.HashTitle(item.Title)
-		semanticSig := dedup.SemanticSignature(item.Title)
+		titleHash := dedup.HashTitle(cleanTitle)
+		titleNorm := dedup.NormalizeTitleForDedup(cleanTitle)
+		semanticSig := dedup.SemanticSignature(cleanTitle)
 
 		if _, exists := knownURLs[urlHash]; exists {
 			continue
@@ -115,8 +155,14 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			slog.Debug("candidate duplicate title hash (semantic)", "signature", semanticSig, "title", item.Title)
 			continue
 		}
+		if titleNorm != "" {
+			if _, exists := seenTitleNorms[titleNorm]; exists {
+				slog.Debug("candidate duplicate title_norm", "title_norm", titleNorm, "title", item.Title)
+				continue
+			}
+		}
 
-		candidateText := dedup.BuildSimilarityText(item.Title, item.Description)
+		candidateText := dedup.BuildSimilarityText(cleanTitle, item.Description)
 		if candidateText != "" {
 			threshold := dedup.ThresholdForSourceType(item.SourceType)
 			if dedup.IsNearDuplicate(candidateText, recentDedupTexts, threshold) {
@@ -127,14 +173,26 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 
 		effectiveMinScore := cfg.MinScore
 		if item.SourcePriority > 0 {
-			// Lower priority -> higher min score requirement. Higher priority -> lower min score requirement.
-			// e.g. Priority 50 adds +25 to requirement. Priority 120 reduces requirement by 10.
 			effectiveMinScore += (100 - item.SourcePriority) / 2
 		}
 
-		// Score + Nintendo relevance gate
 		result, ok, reason := scorer.ShouldPost(item.Title, item.Description, topics, effectiveMinScore, item.RequireAnchor)
 		if !ok {
+			if len([]rune(strings.TrimSpace(item.Title))) >= 24 &&
+				(reason == "below_min_score" || item.SourcePriority >= 100 || result.TechScore >= 60) {
+				triagePriority := result.Score + result.TechScore + item.SourcePriority
+				if result.Category == scorer.CategoryTech || result.Category == scorer.CategoryCompany || result.Category == scorer.CategoryLegal {
+					triagePriority += 40
+				}
+				triagePool = append(triagePool, triageCandidate{
+					Item:      item,
+					URLHash:   urlHash,
+					TitleHash: titleHash,
+					RawScore:  result.Score,
+					TechScore: result.TechScore,
+					Priority:  triagePriority,
+				})
+			}
 			slog.Debug("candidate filtered out", "reason", reason, "title", item.Title)
 			continue
 		}
@@ -144,7 +202,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			recentSimilar, _ = db.WasEventPostedRecently(ctx, database, result.EventTag, 6)
 		}
 
-		rankScore := candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours)
+		rankScore := candidateRankingScore(result.Score, item.SourcePriority, item.PublishedAt, item.SourceType, cfg.RecentTitlesHours) + result.ImpactScore
 		if recentSimilar {
 			rankScore -= 50
 		}
@@ -154,9 +212,12 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			score:               result.Score,
 			rankScore:           rankScore,
 			techScore:           result.TechScore,
+			impactScore:         result.ImpactScore,
 			weirdnessScore:      result.WeirdnessScore,
 			mustPublish:         result.MustPublish,
 			eventTag:            result.EventTag,
+			category:            result.Category,
+			franchiseTag:        result.FranchiseTag,
 			recentSimilarPosted: recentSimilar,
 			urlHash:             urlHash,
 			titleHash:           titleHash,
@@ -164,33 +225,94 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		if result.MustPublish {
 			slog.Info("MUST-PUBLISH event detected", "title", item.Title, "score", result.Score)
 		}
-		slog.Debug("candidate accepted for AI", "title", item.Title, "score", result.Score, "signature", semanticSig)
+		slog.Debug("candidate accepted for AI", "title", item.Title, "score", result.Score, "category", result.Category, "signature", semanticSig)
 		knownURLs[urlHash] = struct{}{}
 		knownTitles[titleHash] = struct{}{}
+		if titleNorm != "" {
+			seenTitleNorms[titleNorm] = struct{}{}
+		}
 		if candidateText != "" {
 			recentDedupTexts = append(recentDedupTexts, candidateText)
 		}
 	}
+
+	// -- 6b. Cheap AI Triage Rescue over missed headlines --------------------
+	if len(triagePool) > 0 && manager != nil && manager.CallsUsed() < manager.CallsBudget() {
+		prioritizedTriage := prioritizeTriagePool(triagePool, 25)
+		rescuedIndices := runTriage(ctx, prioritizedTriage, manager)
+		for _, idx := range rescuedIndices {
+			tc := prioritizedTriage[idx]
+			res := scorer.Evaluate(tc.Item.Title, tc.Item.Description, topics)
+			score := maxInt(res.Score, cfg.MinScore+35)
+			rankScore := candidateRankingScore(score, tc.Item.SourcePriority, tc.Item.PublishedAt, tc.Item.SourceType, cfg.RecentTitlesHours) + maxInt(res.ImpactScore, 28)
+			candidates = append(candidates, candidate{
+				item:            tc.Item,
+				score:           score,
+				rankScore:       rankScore,
+				techScore:       res.TechScore,
+				impactScore:     res.ImpactScore,
+				weirdnessScore:  res.WeirdnessScore,
+				category:        res.Category,
+				franchiseTag:    res.FranchiseTag,
+				rescuedByTriage: true,
+				urlHash:         tc.URLHash,
+				titleHash:       tc.TitleHash,
+			})
+		}
+	}
+
 	filteredCount = len(candidates)
 	logStage("local_filter", stageStart, runStart)
 	stageStart = time.Now()
 
 	if len(candidates) < 1 {
 		slog.Info("no candidates this run")
+		if !cfg.DryRun && database != nil {
+			monitorEmptyRuns(ctx, database, cfg, false)
+		}
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
+	// Cross-source hype boost & category/franchise anti-fatigue before top-pool cut.
+	candidates = applyCrossSourceBoost(candidates, items)
+	candidates = applyCategoryAndFranchiseAntiFatigue(candidates, recentCategories, recentFranchises)
 	sortCandidates(candidates)
+	candidates = capCandidatesPerSource(candidates, 3)
 
-	maxCandidatesToCheck := 10
+	maxCandidatesToCheck := 12
 	if len(candidates) < maxCandidatesToCheck {
 		maxCandidatesToCheck = len(candidates)
 	}
 	candidatesPool := candidates[:maxCandidatesToCheck]
-	checkedCandidates, dateChecked, dateDropped, quarantined, quarantineReasons := validateTopCandidatesFreshness(ctx, candidatesPool, cfg.RecentTitlesHours, cfg, database)
-	sortCandidates(checkedCandidates)
+
+	// Resolve lazy Google News URLs on top pool and drop any URLs matching already-known articles.
+	resolvedPool := make([]candidate, 0, len(candidatesPool))
+	for _, c := range candidatesPool {
+		if c.item.NeedsRedirectResolve && fetcher.IsGoogleNewsURL(c.item.Link) {
+			resCtx, resCancel := context.WithTimeout(ctx, 8*time.Second)
+			resolved, rErr := fetcher.ResolveRedirectWithContext(resCtx, c.item.Link)
+			resCancel()
+			if rErr == nil && resolved != "" && resolved != c.item.Link {
+				c.item.Link = resolved
+				newHash := dedup.HashURL(resolved)
+				if _, dup := knownURLs[newHash]; dup {
+					slog.Debug("resolved google news URL already known, skipping", "url", resolved)
+					continue
+				}
+				c.urlHash = newHash
+				knownURLs[newHash] = struct{}{}
+			}
+		}
+		resolvedPool = append(resolvedPool, c)
+	}
+
+	checkedCandidates, dateChecked, dateDropped, quarantined, quarantineReasons := validateTopCandidatesFreshness(ctx, resolvedPool, cfg.RecentTitlesHours, cfg, database)
 	quarantineCount := len(quarantined)
+
+	// Re-apply anti-fatigue/hype after source-date adjustment so ranking remains consistent.
+	checkedCandidates = applyCategoryAndFranchiseAntiFatigue(checkedCandidates, recentCategories, recentFranchises)
+	sortCandidates(checkedCandidates)
 
 	slog.Info("source-date freshness check complete",
 		"checked", dateChecked,
@@ -205,7 +327,7 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		handleQuarantineAlert(cfg, quarantined)
 	}
 
-	topN := 5
+	topN := 6
 	if len(checkedCandidates) > topN {
 		checkedCandidates = checkedCandidates[:topN]
 	}
@@ -227,17 +349,23 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			fmt.Println()
 		}
 		slog.Info("no candidates this run")
+		if !cfg.DryRun && database != nil {
+			monitorEmptyRuns(ctx, database, cfg, false)
+		}
 		logFinalStats(fetchedCount, 0, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
-	topCandidates := checkedCandidates
+
+	// Pre-AI parallel article body scrape & paywall/stub filter on top pool.
+	topCandidates := scrapeTopCandidates(ctx, checkedCandidates, topN)
+	logStage("pre_ai_scrape", stageStart, runStart)
+	stageStart = time.Now()
 
 	selectionPrompt := buildSelectorPrompt(topCandidates, recentPublishedTitles)
 
-	var selectedIdx int
+	selectedIdx := 0
 	aiSelectorUsed = true
 	rawSelection, err := manager.Generate(ctx, selectionPrompt)
-	selectedIdx = 0
 	if err != nil {
 		slog.Warn("AI selector failed, using top-scored fallback", "error", err)
 	} else {
@@ -245,33 +373,10 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		if strings.Contains(strings.ToUpper(rawSelection), "SKIP") {
 			slog.Info("AI selector decided to skip all candidates (duplicates or low quality)", "response", rawSelection)
 			if cfg.DryRun {
-				fmt.Println("\n==================== DRY RUN REPORT ====================")
-				fmt.Printf("1. QUARANTINED ARTICLES (%d total):\n", len(quarantined))
-				if len(quarantined) == 0 {
-					fmt.Println("   (none)")
-				} else {
-					for i, q := range quarantined {
-						reason := quarantineReasons[q.item.Link]
-						if reason == "" {
-							reason = "source date missing or unreachable"
-						}
-						fmt.Printf("   [%d] %s\n       Source: %s | URL: %s\n       Reason: %s\n", i+1, q.item.Title, q.item.SourceName, q.item.Link, reason)
-					}
-				}
-
-				fmt.Printf("\n2. CANDIDATES CONSIDERED BY SELECTOR (%d total):\n", len(topCandidates))
-				for i, tc := range topCandidates {
-					pubStr := "unknown"
-					if tc.item.PublishedAt != nil {
-						pubStr = tc.item.PublishedAt.UTC().Format(time.RFC3339)
-					}
-					fmt.Printf("   [%d] %s\n       Source: %s | Score: %d | Published: %s\n", i+1, tc.item.Title, tc.item.SourceName, tc.score, pubStr)
-				}
-
-				fmt.Println("\n3. SELECTED CANDIDATE:")
-				fmt.Println("   (AI selector returned SKIP: all candidates are duplicates of recent published events or lack substance)")
-				fmt.Println("========================================================")
-				fmt.Println()
+				printDryRunSkipReport(quarantined, quarantineReasons, topCandidates)
+			}
+			if !cfg.DryRun && database != nil {
+				monitorEmptyRuns(ctx, database, cfg, false)
 			}
 			logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 			return
@@ -286,130 +391,215 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 	logStage("ai_selector", stageStart, runStart)
 	stageStart = time.Now()
 
-	selected := topCandidates[selectedIdx]
-
-	// Step 6.5: fetch preferred media only for the single winning article.
-	rssVideoURL := selected.item.VideoURL
-	rssImageURL := selected.item.ImageURL
-	selected.item.VideoURL = ""
-	selected.item.ImageURL = ""
-	imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
-	videoURL, imageURL, imageErr := fetcher.FetchPreferredMedia(imageCtx, selected.item.Link)
-	imageCancel()
-	if videoURL == "" && rssVideoURL != "" {
-		videoURL = rssVideoURL
-	}
-	if imageURL == "" && rssImageURL != "" {
-		imageURL = rssImageURL
-	}
-	if imageErr != nil && videoURL == "" && imageURL == "" {
-		slog.Warn("media fetch failed, fallback to no media", "url", selected.item.Link, "error", imageErr)
-	} else {
-		if videoURL != "" {
-			selected.item.VideoURL = videoURL
-			slog.Info("youtube video extracted", "url", selected.item.Link, "video_url", videoURL)
-		}
-		if imageURL != "" {
-			selected.item.ImageURL = imageURL
-			slog.Info("og:image extracted", "url", selected.item.Link)
-		}
-		if videoURL == "" && imageURL == "" {
-			slog.Info("no preferred media found, fallback to text-only", "url", selected.item.Link)
+	// Build fallback candidate order starting with AI selector pick, then top alternatives.
+	orderedIndices := make([]int, 0, len(topCandidates))
+	orderedIndices = append(orderedIndices, selectedIdx)
+	for i := range topCandidates {
+		if i != selectedIdx {
+			orderedIndices = append(orderedIndices, i)
 		}
 	}
-	logStage("image_fetch", stageStart, runStart)
-	stageStart = time.Now()
 
-	// Step 6.6: fetch article content for the winning article.
-	var articleBody string
-	contentCtx, contentCancel := context.WithTimeout(ctx, 10*time.Second)
-	content, contentErr := fetcher.FetchArticleContent(contentCtx, selected.item.Link)
-	contentCancel()
-	if contentErr != nil {
-		slog.Warn("article content fetch failed, using RSS description", "url", selected.item.Link, "error", contentErr)
-		articleBody = selected.item.Description
-	} else if content != "" {
-		articleBody = content
-		slog.Info("article content fetched", "url", selected.item.Link, "chars", len(content))
-	} else {
-		articleBody = selected.item.Description
-		slog.Info("article content empty, using RSS description", "url", selected.item.Link)
-	}
-	logStage("content_fetch", stageStart, runStart)
-	stageStart = time.Now()
+	embedder := buildPipelineEmbedder()
+	var (
+		chosenIdx        int
+		selectedArticle  db.Article
+		chosenProvider   string
+		chosenCleanBody  string
+		accepted         bool
+	)
 
-	rewritePrompt := ai.BuildPrompt(ai.NewsInput{
-		Title:       selected.item.Title,
-		Body:        articleBody,
-		Source:      selected.item.SourceName,
-		PublishedAt: selected.item.PublishedAt,
-		CurrentTime: time.Now(),
-	})
-	aiRewriteUsed = true
-	rewritten, err := manager.Generate(ctx, rewritePrompt)
-	if errors.Is(err, ai.ErrSkipped) {
-		slog.Info("AI skipped selected candidate", "title", selected.item.Title)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-		return
-	}
-	if err != nil {
-		slog.Error("AI rewrite failed", "error", err)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-		return
-	}
-	rewriteProvider := manager.LastProvider()
-	slog.Info("AI rewrite used", "provider", rewriteProvider)
-	
-	postData, parseErr := ai.ParseJSONPost(rewritten)
-	if parseErr != nil {
-		slog.Error("Failed to parse AI JSON, falling back to raw text", "error", parseErr, "raw", rewritten)
-		postData.TelegramHTML = sanitizeGeneratedBody(rewritten)
-		postData.Type = ai.ArticleTypeNews
-	}
-	
-	if postData.Skip {
-		slog.Info("AI explicitly skipped via JSON",
-			"title", selected.item.Title,
-			"reason", postData.Reason,
-		)
-		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
-		return
-	}
+	attempts := 0
+	const maxCandidateAttempts = 2
+	for _, cIdx := range orderedIndices {
+		if attempts >= maxCandidateAttempts {
+			break
+		}
+		if manager.CallsUsed() >= manager.CallsBudget() {
+			slog.Warn("AI call budget exhausted before candidate rewrite")
+			break
+		}
+		attempts++
+		selected := topCandidates[cIdx]
 
-	articleType := postData.Type
-	cleanBody := sanitizeGeneratedBody(postData.TelegramHTML)
-	threadsBody := dedup.StripForbiddenIntro(postData.ThreadsText)
+		// Fetch media only for candidate under active rewrite attempt.
+		rssVideoURL := selected.item.VideoURL
+		rssImageURL := selected.item.ImageURL
+		selected.item.VideoURL = ""
+		selected.item.ImageURL = ""
+		imageCtx, imageCancel := context.WithTimeout(ctx, 10*time.Second)
+		videoURL, imageURL, imageErr := fetcher.FetchPreferredMedia(imageCtx, selected.item.Link)
+		imageCancel()
+		if videoURL == "" && rssVideoURL != "" {
+			videoURL = rssVideoURL
+		}
+		if imageURL == "" && rssImageURL != "" {
+			imageURL = rssImageURL
+		}
+		if imageErr != nil && videoURL == "" && imageURL == "" {
+			slog.Warn("media fetch failed, fallback to no media", "url", selected.item.Link, "error", imageErr)
+		}
 
-	_ = calculateHype(selected.item, items)
+		// Use already-scraped body from pre-AI scrape or fetch on demand.
+		articleBody := selected.scrapedBody
+		if articleBody == "" {
+			contentCtx, contentCancel := context.WithTimeout(ctx, 10*time.Second)
+			content, contentErr := fetcher.FetchArticleContent(contentCtx, selected.item.Link)
+			contentCancel()
+			if contentErr != nil {
+				slog.Warn("article content fetch failed, using RSS description", "url", selected.item.Link, "error", contentErr)
+				articleBody = selected.item.Description
+			} else if content != "" {
+				articleBody = content
+			} else {
+				articleBody = selected.item.Description
+			}
+		}
+
+		contentHash := dedup.GenerateContentHashWithNumbers(selected.item.Title, articleBody)
+		if contentHash != "" {
+			if hashDup, _ := db.HasContentHash(ctx, database, contentHash, dedupHours); hashDup {
+				slog.Info("candidate skipped by DB content_hash dedup, trying next", "title", selected.item.Title)
+				continue
+			}
+		}
+
+		pubStr := ""
+		if selected.item.PublishedAt != nil {
+			pubStr = selected.item.PublishedAt.UTC().Format("2006-01-02")
+		}
+		sourceForNumbers := selected.item.Title + "\n" + articleBody + "\n" + pubStr + "\n" + time.Now().Format("2006-01-02")
+
+		var rewritten, rewriteProvider string
+		if !cfg.DryRun && database != nil {
+			if cachedJSON, cachedProv, hit, _ := db.GetCachedAITranslation(ctx, database, selected.urlHash, 72); hit {
+				rewritten = cachedJSON
+				rewriteProvider = cachedProv
+				slog.Info("AI translation cache hit", "url", selected.item.Link, "provider", cachedProv)
+			}
+		}
+
+		if rewritten == "" {
+			rewritePrompt := ai.BuildPrompt(ai.NewsInput{
+				Title:       selected.item.Title,
+				Body:        articleBody,
+				Source:      selected.item.SourceName,
+				PublishedAt: selected.item.PublishedAt,
+				CurrentTime: time.Now(),
+			})
+			aiRewriteUsed = true
+			var genErr error
+			rewritten, genErr = manager.GenerateValidated(ctx, rewritePrompt, func(raw string) error {
+				parsed, err := ai.ParseJSONPost(raw)
+				if err != nil {
+					return fmt.Errorf("invalid post json: %w", err)
+				}
+				if parsed.Skip {
+					return nil
+				}
+				if err := ai.VerifyUkrainian(parsed.TelegramHTML); err != nil {
+					return fmt.Errorf("ukrainian validation failed: %w", err)
+				}
+				if err := ai.VerifyNumbers(sourceForNumbers, parsed.TelegramHTML); err != nil {
+					return fmt.Errorf("number grounding failed: %w", err)
+				}
+				return nil
+			})
+			if errors.Is(genErr, ai.ErrSkipped) {
+				slog.Info("AI skipped candidate, trying fallback", "title", selected.item.Title)
+				continue
+			}
+			if genErr != nil {
+				slog.Error("AI rewrite/validation failed for candidate, trying fallback", "title", selected.item.Title, "error", genErr)
+				continue
+			}
+			rewriteProvider = manager.LastProvider()
+			if !cfg.DryRun && database != nil {
+				_ = db.SaveCachedAITranslation(ctx, database, selected.urlHash, rewritten, rewriteProvider)
+			}
+		}
+
+		postData, parseErr := ai.ParseJSONPost(rewritten)
+		if parseErr != nil {
+			slog.Error("unexpected JSON parse error after validation", "error", parseErr)
+			continue
+		}
+		if postData.Skip {
+			slog.Info("AI explicitly skipped candidate via JSON, trying fallback", "title", selected.item.Title, "reason", postData.Reason)
+			continue
+		}
+
+		finalCat := string(selected.category)
+		if postData.Category != "" {
+			finalCat = postData.Category
+		}
+		if gateOK, gateReason := scorer.PassesEditorialGate(selected.item.Title, scorer.Category(finalCat), postData.AudienceScore, postData.ConcreteAnchor); !gateOK {
+			slog.Info("candidate failed post-AI editorial gate, trying fallback", "title", selected.item.Title, "reason", gateReason)
+			continue
+		}
+
+		var emb []float32
+		if embedder != nil {
+			embCtx, embCancel := context.WithTimeout(ctx, 10*time.Second)
+			vec, embErr := embedder.Embed(embCtx, selected.item.Title+"\n"+postData.ConcreteAnchor+"\n"+postData.StoryClusterKey)
+			embCancel()
+			if embErr == nil && len(vec) > 0 {
+				emb = vec
+			}
+		}
+
+		titleNorm := dedup.NormalizeTitleForDedup(selected.item.Title)
+		if dup, dupReason := dedup.CheckSemanticDuplicate(selected.item.Title, titleNorm, contentHash, postData.StoryClusterKey, emb, recentStories); dup {
+			slog.Info("candidate caught by semantic duplicate check, trying fallback", "title", selected.item.Title, "reason", dupReason)
+			continue
+		}
+
+		cleanBody := sanitizeGeneratedBody(postData.TelegramHTML)
+		threadsBody := dedup.StripForbiddenIntro(postData.ThreadsText)
+		if selected.item.VideoURL == "" && selected.item.ImageURL == "" {
+			selected.item.ImageURL = fallbackImageForType(postData.Type)
+		}
+
+		chosenIdx = cIdx
+		chosenProvider = rewriteProvider
+		chosenCleanBody = cleanBody
+		selectedArticle = db.Article{
+			SourceURL:       selected.item.Link,
+			URLHash:         selected.urlHash,
+			TitleHash:       selected.titleHash,
+			ContentHash:     contentHash,
+			TitleRaw:        selected.item.Title,
+			BodyUA:          cleanBody,
+			BodyThreads:     threadsBody,
+			VideoURL:        selected.item.VideoURL,
+			ImageURL:        selected.item.ImageURL,
+			SourceName:      selected.item.SourceName,
+			SourceType:      selected.item.SourceType,
+			ArticleType:     postData.Type,
+			Category:        finalCat,
+			FranchiseTag:    selected.franchiseTag,
+			TitleNorm:       titleNorm,
+			StoryClusterKey: postData.StoryClusterKey,
+			ConcreteAnchor:  postData.ConcreteAnchor,
+			AudienceScore:   postData.AudienceScore,
+			Embedding:       emb,
+			Score:           selected.score,
+			Status:          db.StatusPending,
+			EventTag:        selected.eventTag,
+			PublishedAt:     selected.item.PublishedAt,
+		}
+		accepted = true
+		break
+	}
 
 	logStage("ai_rewrite", stageStart, runStart)
-	stageStart = time.Now()
-
-	if selected.item.VideoURL == "" && selected.item.ImageURL == "" {
-		selected.item.ImageURL = fallbackImageForType(articleType)
-		slog.Info("fallback image selected",
-			"article_type", articleType,
-			"image_url", selected.item.ImageURL,
-		)
-	}
-
-	article := db.Article{
-		SourceURL:   selected.item.Link,
-		URLHash:     selected.urlHash,
-		TitleHash:   selected.titleHash,
-		ContentHash: selected.item.ContentHash,
-		TitleRaw:    selected.item.Title,
-		BodyUA:      cleanBody,
-		BodyThreads: threadsBody,
-		VideoURL:    selected.item.VideoURL,
-		ImageURL:    selected.item.ImageURL,
-		SourceName:  selected.item.SourceName,
-		SourceType:  selected.item.SourceType,
-		ArticleType: articleType,
-		Score:       selected.score,
-		Status:      db.StatusPending,
-		EventTag:    selected.eventTag,
-		PublishedAt: selected.item.PublishedAt,
+	if !accepted {
+		slog.Info("no candidate cleared AI selection/verification/semantic-dedup checks")
+		if !cfg.DryRun && database != nil {
+			monitorEmptyRuns(ctx, database, cfg, false)
+		}
+		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+		return
 	}
 
 	if cfg.DryRun {
@@ -433,35 +623,36 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 			if tc.item.PublishedAt != nil {
 				pubStr = tc.item.PublishedAt.UTC().Format(time.RFC3339)
 			}
-			fmt.Printf("   [%d] %s\n       Source: %s | Score: %d | Published: %s\n", i+1, tc.item.Title, tc.item.SourceName, tc.score, pubStr)
+			fmt.Printf("   [%d] %s\n       Source: %s | Cat: %s | Hype: %d | Score: %d (rank %d) | Published: %s\n",
+				i+1, tc.item.Title, tc.item.SourceName, tc.category, tc.hypeCount, tc.score, tc.rankScore, pubStr)
 		}
 
-		fmt.Printf("\n3. SELECTED CANDIDATE (Index %d):\n", selectedIdx+1)
-		fmt.Printf("   Title:  %s\n", article.TitleRaw)
-		fmt.Printf("   Source: %s\n", article.SourceName)
-		fmt.Printf("   Type:   %s\n", article.ArticleType)
+		fmt.Printf("\n3. SELECTED CANDIDATE (Index %d):\n", chosenIdx+1)
+		fmt.Printf("   Title:    %s\n", selectedArticle.TitleRaw)
+		fmt.Printf("   Source:   %s\n", selectedArticle.SourceName)
+		fmt.Printf("   Category: %s | Type: %s | Cluster: %s\n", selectedArticle.Category, selectedArticle.ArticleType, selectedArticle.StoryClusterKey)
 
 		fmt.Println("\n4. WOULD PUBLISH TELEGRAM POST:")
 		fmt.Println("--------------------------------------------------------")
-		fmt.Println(cleanBody)
+		fmt.Println(chosenCleanBody)
 		fmt.Println("--------------------------------------------------------")
 		fmt.Println("========================================================")
 		fmt.Println()
 
-		slog.Info("DRY_RUN - would post selected article", "title", article.TitleRaw, "provider", rewriteProvider)
+		slog.Info("DRY_RUN - would post selected article", "title", selectedArticle.TitleRaw, "provider", chosenProvider)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
-	articleID, err := db.InsertArticle(ctx, database, article)
+	articleID, err := db.InsertArticle(ctx, database, selectedArticle)
 	if err != nil {
 		slog.Error("insert pending article failed", "error", err)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
-	article.ID = articleID
+	selectedArticle.ID = articleID
 
-	if err := db.UpdateBodies(ctx, database, article.ID, cleanBody, threadsBody, rewriteProvider); err != nil {
+	if err := db.UpdateBodies(ctx, database, selectedArticle.ID, selectedArticle.BodyUA, selectedArticle.BodyThreads, chosenProvider); err != nil {
 		slog.Warn("update bodies failed", "error", err)
 	}
 
@@ -485,27 +676,78 @@ func Run(ctx context.Context, cfg *config.Config, database *sql.DB, manager *ai.
 		previewChatID = cfg.TelegramChannelID
 	}
 
-	previewMessageID, err := telegram.SendModerationPreview(bot, previewChatID, article)
+	previewMessageID, err := telegram.SendModerationPreview(bot, previewChatID, selectedArticle)
 	if err != nil {
-		slog.Error("send moderation preview failed", "error", err, "article_id", article.ID)
+		slog.Error("send moderation preview failed", "error", err, "article_id", selectedArticle.ID)
 		logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
 		return
 	}
 
-	if cachedVid := telegram.GetCachedPreviewVideoURL(article.ID); cachedVid != "" {
-		if err := db.UpdateVideoURL(ctx, database, article.ID, cachedVid); err != nil {
-			slog.Warn("failed to cache telegram video file_id in db", "article_id", article.ID, "error", err)
+	if cachedVid := telegram.GetCachedPreviewVideoURL(selectedArticle.ID); cachedVid != "" {
+		if err := db.UpdateVideoURL(ctx, database, selectedArticle.ID, cachedVid); err != nil {
+			slog.Warn("failed to cache telegram video file_id in db", "article_id", selectedArticle.ID, "error", err)
 		}
 	}
 
 	posted = true
+	if database != nil {
+		monitorEmptyRuns(ctx, database, cfg, true)
+	}
 	slog.Info("moderation preview sent",
-		"article_id", article.ID,
+		"article_id", selectedArticle.ID,
 		"preview_chat_id", previewChatID,
 		"preview_message_id", previewMessageID,
 	)
 
 	logFinalStats(fetchedCount, filteredCount, aiSelectorUsed, aiRewriteUsed, posted, manager.CallsUsed(), manager.RetriesUsed(), manager.CallsBudget(), runStart)
+}
+
+func buildPipelineEmbedder() embedding.Embedder {
+	var keys []string
+	for _, envName := range []string{"GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"} {
+		if k := strings.TrimSpace(os.Getenv(envName)); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	emb, err := embedding.NewGeminiEmbedder(keys, embedding.DefaultEmbeddingModel)
+	if err != nil {
+		slog.Debug("gemini embedder disabled", "error", err)
+		return nil
+	}
+	return emb
+}
+
+func printDryRunSkipReport(quarantined []candidate, quarantineReasons map[string]string, topCandidates []candidate) {
+	fmt.Println("\n==================== DRY RUN REPORT ====================")
+	fmt.Printf("1. QUARANTINED ARTICLES (%d total):\n", len(quarantined))
+	if len(quarantined) == 0 {
+		fmt.Println("   (none)")
+	} else {
+		for i, q := range quarantined {
+			reason := quarantineReasons[q.item.Link]
+			if reason == "" {
+				reason = "source date missing or unreachable"
+			}
+			fmt.Printf("   [%d] %s\n       Source: %s | URL: %s\n       Reason: %s\n", i+1, q.item.Title, q.item.SourceName, q.item.Link, reason)
+		}
+	}
+
+	fmt.Printf("\n2. CANDIDATES CONSIDERED BY SELECTOR (%d total):\n", len(topCandidates))
+	for i, tc := range topCandidates {
+		pubStr := "unknown"
+		if tc.item.PublishedAt != nil {
+			pubStr = tc.item.PublishedAt.UTC().Format(time.RFC3339)
+		}
+		fmt.Printf("   [%d] %s\n       Source: %s | Cat: %s | Score: %d | Published: %s\n", i+1, tc.item.Title, tc.item.SourceName, tc.category, tc.score, pubStr)
+	}
+
+	fmt.Println("\n3. SELECTED CANDIDATE:")
+	fmt.Println("   (AI selector returned SKIP: all candidates are duplicates of recent published events or lack substance)")
+	fmt.Println("========================================================")
+	fmt.Println()
 }
 
 func buildSelectorPrompt(candidates []candidate, publishedTitles []string) string {
@@ -529,22 +771,35 @@ func buildSelectorPrompt(candidates []candidate, publishedTitles []string) strin
 	b.WriteString("Here is the ranked list of candidates (already scored by internal logic):\n\n")
 
 	for i, c := range candidates {
-		desc := strings.ReplaceAll(c.item.Description, "\n", " ")
+		sourceText := c.scrapedBody
+		if sourceText == "" {
+			sourceText = c.item.Description
+		}
+		desc := strings.ReplaceAll(sourceText, "\n", " ")
 		desc = strings.TrimSpace(desc)
 		runes := []rune(desc)
-		if len(runes) > 240 {
-			desc = string(runes[:240]) + "..."
+		if len(runes) > 480 {
+			desc = string(runes[:480]) + "..."
 		}
-		
+
 		recentFlag := ""
 		if c.recentSimilarPosted {
 			recentFlag = ", RECENT_SIMILAR_POSTED: True"
+		}
+		hypeFlag := ""
+		if c.hypeCount > 1 {
+			hypeFlag = fmt.Sprintf(", sources: %d", c.hypeCount)
+		}
+		catLabel := string(c.category)
+		if catLabel == "" {
+			catLabel = "games"
 		}
 		dateStr := "невідома"
 		if c.item.PublishedAt != nil && !c.item.PublishedAt.IsZero() {
 			dateStr = c.item.PublishedAt.UTC().Format("2006-01-02 15:04 UTC")
 		}
-		fmt.Fprintf(&b, "Candidate #%d [score: %d, type: %s, date: %s%s]\n", i+1, c.score, c.item.SourceType, dateStr, recentFlag)
+		fmt.Fprintf(&b, "Candidate #%d [rank: %d, score: %d, cat: %s, type: %s%s, date: %s%s]\n",
+			i+1, c.rankScore, c.score, catLabel, c.item.SourceType, hypeFlag, dateStr, recentFlag)
 		fmt.Fprintf(&b, "Title: %s\n", c.item.Title)
 		if desc != "" {
 			fmt.Fprintf(&b, "Body: %s\n", desc)
@@ -554,18 +809,15 @@ func buildSelectorPrompt(candidates []candidate, publishedTitles []string) strin
 
 	b.WriteString(fmt.Sprintf(`Editorial Guidelines & Selection Instructions:
 1. КАТЕГОРИЧНО НЕ ВИБИРАЙ НОВИНУ ПРО ТЕ Ж САМЕ ПОДІЮ (АНТИ-ДУБЛЬ):
-   - Уважно звіряйся зі списком опублікованих постів за останні 30 днів вище.
-   - Якщо кандидат розповідає про ту саму подію, судовий процес, вирок, оновлення чи анонс, який уже висвітлювався в каналі (наприклад, позов проти піратства / модератора Reddit SwitchPirates) — це ДУБЛЬ, навіть якщо інше видання переписало новину через 2 дні чи тиждень. Не вибирай новину про те ж саме подію!
-   - Якщо кандидат дублює опубліковану подію — категорично відхиляй його.
-2. NINTENDO-FIRST PRIORITY: The channel is primarily about NINTENDO AS A COMPANY AND ECOSYSTEM, not just an endless feed of routine third-party game release dates.
-   - TOP PRIORITY: Nintendo company moves, official Nintendo Direct announcements, executive statements (Furukawa, Miyamoto, Aonuma, Koizumi), console sales milestones, financial earnings reports, Nintendo Switch Online updates, backward compatibility, firmware/OS updates, Nintendo Museum, legal battles/IP protection (e.g. Palworld/Pocketpair lawsuit, emulator bans), and major first-party franchise announcements (Mario, Zelda, Pokemon, Metroid, Smash).
-   - MEDIUM PRIORITY: Exclusive third-party partnerships, major Switch 2 technical breakthroughs (DLSS, performance reveals).
-   - LOW PRIORITY: Generic multiplatform game release date announcements, minor indie ports, routine game trailers.
-   - If a candidate covering Nintendo corporate, hardware, executive statement, or ecosystem is present alongside routine indie/3rd-party game release dates, ALWAYS prefer the Nintendo corporate/hardware/ecosystem candidate!
-3. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Оцінюй дату кожного кандидата (вказана в полі date). Категорично відкидай або штрафуй застарілі рерайти минулих років та матеріали, які подають як майбутнє або невідоме те, що вже давно вийшло за списком пристроїв.
-4. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely new and massive information.
+   - Уважно звіряйся зі списком опублікованих і модераційних постів вище.
+   - Якщо кандидат розповідає про ту саму подію, нагороду, судовий процес, вирок, оновлення чи анонс, який уже висвітлювався (наприклад, Міямото і D.I.C.E./AIAS Hall of Fame або позов проти SwitchPirates) — це ДУБЛЬ, навіть якщо інше видання переписало новину через 4 години або тиждень. Не вибирай новину про те ж саме подію!
+2. СВІТ NINTENDO ПОНАД УСЕ (БАЛАНС ТЕМАТИК):
+   - ТОП-ПРІОРИТЕТ: апаратні відкриття і залізо Switch 2 (DLSS, DLSS 4, чипи Nvidia, датамайнінг SDK/прошивок, дослідження Digital Foundry), бізнес і рішення керівництва (Фурукава, Міямото, звіти, студії), судові позови/патенти, Nintendo Direct, музей/парки/кіно, великі системні реформи.
+   - ІГРИ ЗАЛИШАЄМО, АЛЕ ДОЗОВАНО І ЯКІСНО: обирай ігрові новини тоді, коли це дійсно великий анонс, ексклюзив або подія з кількома джерелами (sources > 1). Категорично уникай рутинних іконок NSO, треків Nintendo Music, тижневих чартів продажів, гайдів, оглядів та повторів тієї ж франшизи (наприклад, Pikmin).
+3. ВРАХОВУЙ ДАТИ ТА СВІЖІСТЬ: Сьогоднішня дата %s. Категорично відкидай застарілі рерайти минулих років та вкиди про вже випущені пристрої.
+4. If a candidate has "RECENT_SIMILAR_POSTED: True", strictly penalize it UNLESS it contains genuinely massive new facts.
 5. Return ONLY the number of the best candidate (e.g., 1 or 2).
-6. If all candidates are duplicates, weak, repetitive, or lack substance, return "SKIP" instead of a number.`, nowStr))
+6. If all candidates are duplicates, weak, routine filler, or lack substance, return "SKIP" instead of a number.`, nowStr))
 	return b.String()
 }
 
@@ -716,8 +968,9 @@ func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
 	hypeSources := make(map[string]struct{})
 	hypeSources[selectedItem.SourceName] = struct{}{}
 
-	selectedSig := dedup.SemanticSignature(selectedItem.Title)
-	selectedFingerprint := dedup.BuildSimilarityText(selectedItem.Title, selectedItem.Description)
+	cleanSelected := dedup.StripPublisherSuffix(selectedItem.Title)
+	selectedSig := dedup.SemanticSignature(cleanSelected)
+	selectedFingerprint := dedup.BuildSimilarityText(cleanSelected, selectedItem.Description)
 
 	for _, it := range allItems {
 		if it.Link == selectedItem.Link {
@@ -727,12 +980,17 @@ func calculateHype(selectedItem fetcher.Item, allItems []fetcher.Item) int {
 			continue
 		}
 
+		cleanTitle := dedup.StripPublisherSuffix(it.Title)
+		if dedup.HasConflictingDateMarkers(cleanSelected, cleanTitle) {
+			continue
+		}
+
 		match := false
-		if dedup.SemanticSignature(it.Title) == selectedSig {
+		if dedup.SemanticSignature(cleanTitle) == selectedSig {
 			match = true
 		} else if selectedFingerprint != "" {
-			itFingerprint := dedup.BuildSimilarityText(it.Title, it.Description)
-			if itFingerprint != "" && dedup.Similarity(selectedFingerprint, itFingerprint) >= 0.60 {
+			itFingerprint := dedup.BuildSimilarityText(cleanTitle, it.Description)
+			if itFingerprint != "" && dedup.Similarity(selectedFingerprint, itFingerprint) >= 0.45 {
 				match = true
 			}
 		}
@@ -762,8 +1020,8 @@ func validateTopCandidatesFreshness(ctx context.Context, topCandidates []candida
 		isTrusted := isTrustedDateSource(c, cfg)
 
 		if err != nil {
-			if isTrusted {
-				slog.Info("source-date check failed for trusted source; keeping candidate with feed date",
+			if isTrusted || canFallbackToFeedDateOnBlock(c, err) {
+				slog.Info("source-date check failed for trusted/blocked high-signal source; keeping candidate with feed date",
 					"title", c.item.Title,
 					"source", c.item.SourceName,
 					"url", c.item.Link,
@@ -929,6 +1187,32 @@ func isTrustedDateSource(c candidate, cfg *config.Config) bool {
 		}
 	}
 	return false
+}
+
+// canFallbackToFeedDateOnBlock allows Google News curated feeds and insider sources
+// with anti-bot/WAF blocks (HTTP 403/429/Cloudflare) to keep their RSS pubDate instead
+// of losing time-sensitive tech or corporate exclusives in 3-run retry quarantine.
+func canFallbackToFeedDateOnBlock(c candidate, err error) bool {
+	if err == nil || c.item.PublishedAt == nil {
+		return false
+	}
+	if !c.item.NeedsRedirectResolve && !strings.EqualFold(c.item.SourceType, "insider") {
+		return false
+	}
+	lowerErr := strings.ToLower(err.Error())
+	isWAFBlock := strings.Contains(lowerErr, "403") ||
+		strings.Contains(lowerErr, "429") ||
+		strings.Contains(lowerErr, "forbidden") ||
+		strings.Contains(lowerErr, "cloudflare") ||
+		strings.Contains(lowerErr, "access denied")
+	if !isWAFBlock {
+		return false
+	}
+	return c.techScore >= 60 ||
+		c.category == scorer.CategoryTech ||
+		c.category == scorer.CategoryCompany ||
+		c.category == scorer.CategoryLegal ||
+		c.category == scorer.CategoryDirect
 }
 
 func handleQuarantineAlert(cfg *config.Config, quarantined []candidate) {
